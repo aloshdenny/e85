@@ -1,47 +1,40 @@
 """
 infer_face_bulk.py
 
-Bulk TribeV2 inference over FairFace category zips (category_zips/*.zip),
-built for speed:
+Bulk TribeV2 inference over FairFace category zips (fairface/*.zip),
+batched for GPU throughput on a 24GB card.
 
-  - Images are read directly out of each zip in memory (zipfile + cv2.imdecode)
-    and are NEVER extracted to a persistent path on disk.
-  - No whisperx/audio transcription (reuses the make_video_only_df trick from
-    infer_bulk.py — builds the minimal events row directly).
-  - No PlotBrain rendering — this pass is purely to get per-ROI prediction
-    vectors for the difference-in-means step, not brain-map PNGs.
-  - Per-image synthetic clips are written to a short-lived temp dir (prefers
-    /dev/shm if present, i.e. RAM-backed, else falls back to system temp) and
-    deleted immediately after each image is processed. The whole temp dir for
-    a category is torn down once that category finishes.
+Confirmed via --probe-batch:
+  - model.predict() accepts multiple "Video" rows in one events dataframe.
+  - Returned Segment list preserves row order and tags each timestep with
+    that row's `timeline` value (e.g. 10 Segments per row for a 10s clip
+    at 1Hz, all sharing that row's timeline string).
+  - So: batch B images per predict() call, one row per image with a unique
+    timeline id, then group the returned preds by segment.timeline and mean
+    within each group to get one vector per image.
 
-IMPORTANT — read before running at scale:
-  model.predict() is called ONCE PER IMAGE by default (not batched across
-  images) because I don't have visibility into exactly how the returned
-  `segments` array demarcates multiple video rows within a single predict()
-  call. Guessing at that mapping risks silently mis-attributing a prediction
-  to the wrong image, which would quietly corrupt your dataset. Run with
-  --probe first (see below) to inspect segments on a handful of images; if
-  you confirm the structure, batching multiple images per predict() call is
-  a further speedup this script can be extended for.
-
-  Also: FmriExtractor.offset=5.0 (hemodynamic delay) means very short clips
-  may return zero valid post-offset timesteps. Default --duration is set to
-  10s (well past the offset) rather than the 2s used in the earlier
-  single-image script — verify with --probe that you're getting a sane
-  preds.shape before running the full ~97k images.
+Speed profile vs. the original video pipeline:
+  - Images decoded straight from zip bytes (cv2.imdecode) -- never hit disk.
+  - No whisperx/audio parsing.
+  - No PlotBrain rendering -- this pass only produces pred_mean vectors for
+    the difference-in-means step.
+  - One predict() call per batch of --batch-size images instead of per image
+    -- the GPU forward pass is now the dominant cost, not Python/IO overhead.
+  - Synthetic clips are written to /dev/shm when available (RAM), else system
+    temp; the whole temp dir for a category is deleted once that category
+    finishes.
 
 Usage:
-  # Sanity check first — run 3 images from the first zip, print shapes/segments
-  python infer_face_bulk.py --zips-dir ./category_zips --probe 3
+  # Confirm your setup is behaving before running the full 97k images:
+  python infer_face_bulk.py --probe 3
+  python infer_face_bulk.py --probe-batch 2
 
   # Full run
-  python infer_face_bulk.py --zips-dir ./category_zips --out-dir ./fairface_preds
+  python infer_face_bulk.py --zips-dir ./fairface --out-dir ./fairface_preds --batch-size 32
 """
 
 import os
 import sys
-import io
 import shutil
 import tempfile
 import warnings
@@ -49,6 +42,7 @@ import logging
 import argparse
 import zipfile
 from pathlib import Path
+from collections import defaultdict
 
 warnings.filterwarnings("ignore")
 logging.disable(logging.WARNING)
@@ -75,7 +69,6 @@ def get_tmp_root():
 # ── Category name -> (age, gender, race) ─────────────────────────────────────
 
 def parse_category(name):
-    # e.g. "20-29_female_east_asian" -> ("20-29", "female", "east_asian")
     parts = name.split("_")
     age = parts[0]
     gender = parts[1]
@@ -106,58 +99,79 @@ def write_static_clip(img, out_path: Path, duration: float, fps: int):
     writer.release()
 
 
-# ── Minimal single-row events dataframe (bypasses whisperx, same as infer_bulk.py) ──
+def make_multi_row_df(rows, duration: float) -> pd.DataFrame:
+    """
+    rows: list of (clip_path, timeline_id)
+    """
+    records = []
+    for clip_path, timeline_id in rows:
+        records.append({
+            "type":      "Video",
+            "start":     0.0,
+            "duration":  duration,
+            "timeline":  timeline_id,
+            "subject":   "default",
+            "session":   "",
+            "task":      "",
+            "run":       "",
+            "filepath":  str(clip_path.resolve()),
+            "frequency": 60.0,
+            "offset":    0.0,
+            "stop":      duration,
+            "context":   float("nan"),
+        })
+    return pd.DataFrame(records)
 
-def make_video_only_df(video_path: Path, duration: float) -> pd.DataFrame:
-    return pd.DataFrame([{
-        "type":      "Video",
-        "start":     0.0,
-        "duration":  duration,
-        "timeline":  "default",
-        "subject":   "default",
-        "session":   "",
-        "task":      "",
-        "run":       "",
-        "filepath":  str(video_path.resolve()),
-        "frequency": 60.0,
-        "offset":    0.0,
-        "stop":      duration,
-        "context":   float("nan"),
-    }])
+
+def group_preds_by_timeline(preds, segments):
+    """
+    Group preds rows by segments[i].timeline, preserving first-seen order.
+    Returns dict: timeline_id -> mean pred vector (n_rois,)
+    """
+    groups = defaultdict(list)
+    for i, seg in enumerate(segments):
+        groups[seg.timeline].append(preds[i])
+
+    return {tl: np.mean(np.stack(vecs, axis=0), axis=0) for tl, vecs in groups.items()}
 
 
-# ── Per-image inference ────────────────────────────────────────────────────────
+# ── Diagnostics (kept from earlier probing) ──────────────────────────────────
 
-def infer_one_image(model, img, tmp_dir: Path, tag: str, duration: float, fps: int, verbose=False):
-    clip_path = tmp_dir / f"{tag}.mp4"
-    write_static_clip(img, clip_path, duration=duration, fps=fps)
-
-    df = make_video_only_df(clip_path, duration=duration)
+def probe_batch_row_identity(model, tmp_dir: Path, duration: float, fps: int, n_images: int = 2):
+    rows = []
+    for i in range(n_images):
+        img = np.full((256, 256, 3), fill_value=(i * 40) % 255, dtype=np.uint8)
+        clip_path = tmp_dir / f"probe_batch_{i}.mp4"
+        write_static_clip(img, clip_path, duration=duration, fps=fps)
+        rows.append((clip_path, f"probe_{i}"))
+    df = make_multi_row_df(rows, duration=duration)
     preds, segments = model.predict(events=df)
+    print(f"[probe_batch] preds.shape={preds.shape}")
+    print(f"[probe_batch] n segments={len(segments)}")
+    for s in segments:
+        print(f"  {s}")
+    return preds, segments
 
-    if verbose:
-        print(f"    [probe] preds.shape={preds.shape} "
-              f"segments type={type(segments)} "
+
+def probe_single_images(model, zf: zipfile.ZipFile, members, tmp_dir: Path,
+                         duration: float, fps: int, n: int):
+    for idx, name in enumerate(members[:n]):
+        img = decode_image_from_zip(zf, name)
+        clip_path = tmp_dir / f"probe_{idx}.mp4"
+        write_static_clip(img, clip_path, duration=duration, fps=fps)
+        df = make_multi_row_df([(clip_path, f"probe_{idx}")], duration=duration)
+        preds, segments = model.predict(events=df)
+        print(f"  [probe] {name}: preds.shape={preds.shape} "
               f"segments sample={segments[:1] if len(segments) else segments}")
 
-    try:
-        clip_path.unlink()
-    except OSError:
-        pass
 
-    if preds.shape[0] == 0:
-        return None  # no valid post-offset timesteps — flag upstream
-
-    return preds.mean(axis=0)
-
-
-# ── Category processing ────────────────────────────────────────────────────────
+# ── Batched category processing ───────────────────────────────────────────────
 
 def process_category_zip(model, zip_path: Path, out_dir: Path, tmp_root: Path,
-                          duration: float, fps: int, probe: int = 0):
+                          duration: float, fps: int, batch_size: int):
     category = zip_path.stem
     out_path = out_dir / f"{category}.npz"
-    if out_path.exists() and probe == 0:
+    if out_path.exists():
         print(f"[SKIP] {category} (already done)")
         return
 
@@ -166,56 +180,76 @@ def process_category_zip(model, zip_path: Path, out_dir: Path, tmp_root: Path,
     tmp_dir = Path(tempfile.mkdtemp(prefix=f"tribe_{category}_", dir=tmp_root))
     print(f"[{category}] temp dir: {tmp_dir}")
 
-    means = []
-    names = []
+    all_names = []
+    all_means = []
     failed = []
 
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             members = [n for n in zf.namelist() if Path(n).suffix.lower() in IMAGE_EXTS]
-            if probe:
-                members = members[:probe]
+            print(f"[{category}] {len(members)} images, batch_size={batch_size}")
 
-            print(f"[{category}] {len(members)} images")
+            for batch_start in range(0, len(members), batch_size):
+                batch_members = members[batch_start:batch_start + batch_size]
 
-            for idx, name in enumerate(members):
+                rows = []               # (clip_path, timeline_id)
+                timeline_to_name = {}   # timeline_id -> original filename
+
+                for i, name in enumerate(batch_members):
+                    timeline_id = f"img_{batch_start + i}"
+                    try:
+                        img = decode_image_from_zip(zf, name)
+                        clip_path = tmp_dir / f"{timeline_id}.mp4"
+                        write_static_clip(img, clip_path, duration=duration, fps=fps)
+                        rows.append((clip_path, timeline_id))
+                        timeline_to_name[timeline_id] = name
+                    except Exception as e:
+                        print(f"  [ERROR building clip] {name}: {e}")
+                        failed.append(name)
+
+                if not rows:
+                    continue
+
+                df = make_multi_row_df(rows, duration=duration)
                 try:
-                    img = decode_image_from_zip(zf, name)
-                    mean_pred = infer_one_image(
-                        model, img, tmp_dir, tag=f"img_{idx:06d}",
-                        duration=duration, fps=fps, verbose=bool(probe),
-                    )
-                    if mean_pred is None:
-                        print(f"  [WARN] no valid timesteps: {name}")
+                    preds, segments = model.predict(events=df)
+                except Exception as e:
+                    print(f"  [ERROR predict()] batch at {batch_start}: {e}")
+                    failed.extend(timeline_to_name.values())
+                    for clip_path, _ in rows:
+                        clip_path.unlink(missing_ok=True)
+                    continue
+
+                grouped = group_preds_by_timeline(preds, segments)
+
+                for timeline_id, name in timeline_to_name.items():
+                    vec = grouped.get(timeline_id)
+                    if vec is None:
+                        print(f"  [WARN] no prediction returned for {name}")
                         failed.append(name)
                         continue
-                    means.append(mean_pred)
-                    names.append(name)
-                except Exception as e:
-                    print(f"  [ERROR] {name}: {e}")
-                    failed.append(name)
+                    all_names.append(name)
+                    all_means.append(vec)
 
-                if (idx + 1) % 50 == 0:
-                    print(f"  ...{idx + 1}/{len(members)}")
+                for clip_path, _ in rows:
+                    clip_path.unlink(missing_ok=True)
 
-        if probe:
-            print(f"[{category}] probe complete — inspect the printed shapes above "
-                  f"before running the full set.")
-            return
+                done = min(batch_start + batch_size, len(members))
+                print(f"  ...{done}/{len(members)}")
 
-        if means:
-            means_arr = np.stack(means, axis=0)
+        if all_means:
+            means_arr = np.stack(all_means, axis=0)
             np.savez_compressed(
                 out_path,
                 preds=means_arr,
-                filenames=np.array(names),
+                filenames=np.array(all_names),
                 failed=np.array(failed),
                 age=age, gender=gender, race=race,
             )
             print(f"[{category}] saved {means_arr.shape} -> {out_path} "
                   f"({len(failed)} failed)")
         else:
-            print(f"[{category}] no successful predictions — nothing saved")
+            print(f"[{category}] no successful predictions -- nothing saved")
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -224,8 +258,8 @@ def process_category_zip(model, zip_path: Path, out_dir: Path, tmp_root: Path,
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Bulk FairFace -> TribeV2 inference.")
-    parser.add_argument("--zips-dir", default="./category_zips")
+    parser = argparse.ArgumentParser(description="Batched FairFace -> TribeV2 inference.")
+    parser.add_argument("--zips-dir", default="./fairface")
     parser.add_argument("--out-dir", default="./fairface_preds")
     parser.add_argument("--cache-folder", default="./cache")
     parser.add_argument("--duration", type=float, default=10.0,
@@ -233,10 +267,14 @@ def main():
                               "FmriExtractor offset=5.0 to get valid timesteps.")
     parser.add_argument("--fps", type=int, default=2,
                          help="Synthetic clip frame rate. Kept low since content is static.")
+    parser.add_argument("--batch-size", type=int, default=32,
+                         help="Images per predict() call. Tune up/down based on VRAM headroom.")
     parser.add_argument("--probe", type=int, default=0,
-                         help="If >0, only run this many images from the FIRST zip "
-                              "and print preds/segments shapes for inspection. "
-                              "No files are saved in probe mode.")
+                         help="Run this many single-image predict() calls from the FIRST "
+                              "zip and print shapes. No files saved.")
+    parser.add_argument("--probe-batch", type=int, default=0,
+                         help="Diagnostic: multi-row predict() call with this many dummy "
+                              "images, prints segment structure. No files saved.")
     args = parser.parse_args()
 
     zips_dir = Path(args.zips_dir)
@@ -250,21 +288,36 @@ def main():
     print("Loading TribeV2...")
     model = TribeModel.from_pretrained("facebook/tribev2", cache_folder=Path(args.cache_folder))
 
+    if args.probe_batch:
+        tmp_dir = Path(tempfile.mkdtemp(prefix="tribe_probe_batch_", dir=tmp_root))
+        try:
+            probe_batch_row_identity(model, tmp_dir, duration=args.duration,
+                                      fps=args.fps, n_images=args.probe_batch)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        return
+
     zip_files = sorted(zips_dir.glob("*.zip"))
     if not zip_files:
         print(f"No zips found in {zips_dir}")
         sys.exit(1)
 
     if args.probe:
-        print(f"PROBE MODE — running {args.probe} image(s) from {zip_files[0].name} only")
-        process_category_zip(model, zip_files[0], out_dir, tmp_root,
-                              duration=args.duration, fps=args.fps, probe=args.probe)
+        tmp_dir = Path(tempfile.mkdtemp(prefix="tribe_probe_", dir=tmp_root))
+        try:
+            with zipfile.ZipFile(zip_files[0], "r") as zf:
+                members = [n for n in zf.namelist() if Path(n).suffix.lower() in IMAGE_EXTS]
+                probe_single_images(model, zf, members, tmp_dir,
+                                     duration=args.duration, fps=args.fps, n=args.probe)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
         return
 
     print(f"Discovered {len(zip_files)} category zips")
     for zip_path in zip_files:
         process_category_zip(model, zip_path, out_dir, tmp_root,
-                              duration=args.duration, fps=args.fps)
+                              duration=args.duration, fps=args.fps,
+                              batch_size=args.batch_size)
 
     print("\nAll categories processed.")
     print(f"Outputs in: {out_dir.resolve()}")
