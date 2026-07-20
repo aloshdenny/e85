@@ -42,7 +42,7 @@ from pathlib import Path
 # infer_face_bulk.py must be importable -- same directory as this script.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from infer_face_bulk import get_tmp_root, process_category_zip
+from infer_face_bulk import get_tmp_root, process_fairface_zips
 from tribev2.demo_utils import TribeModel
 
 
@@ -60,7 +60,7 @@ def worker_main(worker_id: int, zip_paths: list, out_dir: Path, cache_folder: Pa
     for zip_path in zip_paths:
         print(f"[worker {worker_id}] -> {zip_path.name}")
         try:
-            process_category_zip(
+            process_fairface_zips(
                 model, zip_path, out_dir, tmp_root,
                 duration=duration, fps=fps, batch_size=batch_size,
             )

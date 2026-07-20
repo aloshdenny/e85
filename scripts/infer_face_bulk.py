@@ -1,7 +1,7 @@
 """
 infer_fairface_bulk.py
 
-Bulk TribeV2 inference over FairFace category zips (category_zips/*.zip),
+Bulk TribeV2 inference over FairFace category zips (fairface/*.zip),
 batched for GPU throughput on a 24GB card.
 
 Confirmed via --probe-batch:
@@ -30,7 +30,7 @@ Usage:
   python infer_fairface_bulk.py --probe-batch 2
 
   # Full run
-  python infer_fairface_bulk.py --zips-dir ./category_zips --out-dir ./fairface_preds --batch-size 32
+  python infer_fairface_bulk.py --zips-dir ./fairface --out-dir ./fairface_preds --batch-size 32
 """
 
 import os
@@ -167,7 +167,7 @@ def probe_single_images(model, zf: zipfile.ZipFile, members, tmp_dir: Path,
 
 # ── Batched category processing ───────────────────────────────────────────────
 
-def process_category_zip(model, zip_path: Path, out_dir: Path, tmp_root: Path,
+def process_fairface_zips(model, zip_path: Path, out_dir: Path, tmp_root: Path,
                           duration: float, fps: int, batch_size: int):
     category = zip_path.stem
     out_path = out_dir / f"{category}.npz"
@@ -259,7 +259,7 @@ def process_category_zip(model, zip_path: Path, out_dir: Path, tmp_root: Path,
 
 def main():
     parser = argparse.ArgumentParser(description="Batched FairFace -> TribeV2 inference.")
-    parser.add_argument("--zips-dir", default="./category_zips")
+    parser.add_argument("--zips-dir", default="./fairface")
     parser.add_argument("--out-dir", default="./fairface_preds")
     parser.add_argument("--cache-folder", default="./cache")
     parser.add_argument("--duration", type=float, default=1.0,
@@ -318,7 +318,7 @@ def main():
 
     print(f"Discovered {len(zip_files)} category zips")
     for zip_path in zip_files:
-        process_category_zip(model, zip_path, out_dir, tmp_root,
+        process_fairface_zips(model, zip_path, out_dir, tmp_root,
                               duration=args.duration, fps=args.fps,
                               batch_size=args.batch_size)
 
