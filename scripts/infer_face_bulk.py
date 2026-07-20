@@ -42,7 +42,99 @@ from pathlib import Path
 # infer_face_bulk.py must be importable -- same directory as this script.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from infer_face_bulk import get_tmp_root, process_category_zip
+def get_tmp_root():
+    shm = Path("/dev/shm")
+    if shm.exists() and os.access(shm, os.W_OK):
+        return shm
+    return Path(tempfile.gettempdir())
+
+def process_category_zip(model, zip_path: Path, out_dir: Path, tmp_root: Path,
+                          duration: float, fps: int, batch_size: int):
+    category = zip_path.stem
+    out_path = out_dir / f"{category}.npz"
+    if out_path.exists():
+        print(f"[SKIP] {category} (already done)")
+        return
+ 
+    age, gender, race = parse_category(category)
+ 
+    tmp_dir = Path(tempfile.mkdtemp(prefix=f"tribe_{category}_", dir=tmp_root))
+    print(f"[{category}] temp dir: {tmp_dir}")
+ 
+    all_names = []
+    all_means = []
+    failed = []
+ 
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            members = [n for n in zf.namelist() if Path(n).suffix.lower() in IMAGE_EXTS]
+            print(f"[{category}] {len(members)} images, batch_size={batch_size}")
+ 
+            for batch_start in range(0, len(members), batch_size):
+                batch_members = members[batch_start:batch_start + batch_size]
+ 
+                rows = []               # (clip_path, timeline_id)
+                timeline_to_name = {}   # timeline_id -> original filename
+ 
+                for i, name in enumerate(batch_members):
+                    timeline_id = f"img_{batch_start + i}"
+                    try:
+                        img = decode_image_from_zip(zf, name)
+                        clip_path = tmp_dir / f"{timeline_id}.mp4"
+                        write_static_clip(img, clip_path, duration=duration, fps=fps)
+                        rows.append((clip_path, timeline_id))
+                        timeline_to_name[timeline_id] = name
+                    except Exception as e:
+                        print(f"  [ERROR building clip] {name}: {e}")
+                        failed.append(name)
+ 
+                if not rows:
+                    continue
+ 
+                df = make_multi_row_df(rows, duration=duration)
+                try:
+                    preds, segments = model.predict(events=df)
+                except Exception as e:
+                    print(f"  [ERROR predict()] batch at {batch_start}: {e}")
+                    failed.extend(timeline_to_name.values())
+                    for clip_path, _ in rows:
+                        clip_path.unlink(missing_ok=True)
+                    continue
+ 
+                grouped = group_preds_by_timeline(preds, segments)
+ 
+                for timeline_id, name in timeline_to_name.items():
+                    vec = grouped.get(timeline_id)
+                    if vec is None:
+                        print(f"  [WARN] no prediction returned for {name}")
+                        failed.append(name)
+                        continue
+                    all_names.append(name)
+                    all_means.append(vec)
+ 
+                for clip_path, _ in rows:
+                    clip_path.unlink(missing_ok=True)
+ 
+                done = min(batch_start + batch_size, len(members))
+                print(f"  ...{done}/{len(members)}")
+ 
+        if all_means:
+            means_arr = np.stack(all_means, axis=0)
+            np.savez_compressed(
+                out_path,
+                preds=means_arr,
+                filenames=np.array(all_names),
+                failed=np.array(failed),
+                age=age, gender=gender, race=race,
+            )
+            print(f"[{category}] saved {means_arr.shape} -> {out_path} "
+                  f"({len(failed)} failed)")
+        else:
+            print(f"[{category}] no successful predictions -- nothing saved")
+ 
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
 from tribev2.demo_utils import TribeModel
 
 
