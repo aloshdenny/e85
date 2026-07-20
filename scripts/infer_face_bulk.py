@@ -30,7 +30,7 @@ Usage:
   python infer_fairface_bulk.py --probe-batch 2
 
   # Full run
-  python infer_fairface_bulk.py --zips-dir ./fairface --out-dir ./fairface_preds --batch-size 32
+  python infer_fairface_bulk.py --zips-dir ./fairface --out-dir ./fairface_preds --batch-size 64
 """
 
 import os
@@ -270,7 +270,7 @@ def main():
                               "assumption, but very short clips risk 0 frames.")
     parser.add_argument("--fps", type=int, default=2,
                          help="Synthetic clip frame rate. Kept low since content is static.")
-    parser.add_argument("--batch-size", type=int, default=32,
+    parser.add_argument("--batch-size", type=int, default=64,
                          help="Images per predict() call. Tune up/down based on VRAM headroom.")
     parser.add_argument("--probe", type=int, default=0,
                          help="Run this many single-image predict() calls from the FIRST "
