@@ -21,6 +21,12 @@ from tribev2.demo_utils import TribeModel
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
+# ── Paths ────────────────────────────────────────────────────────────────────
+
+TARGET_DIR   = Path("./target")        # target image zips, discovered recursively (/**/*.zip)
+OUT_DIR      = Path("./target_preds")  # output directory for per-zip .npz files
+CACHE_DIR    = Path("./cache")
+
 
 def get_tmp_root():
     shm = Path("/dev/shm")
@@ -227,17 +233,20 @@ def main():
 
     parser.add_argument(
         "--target-dir",
-        default="./target",
+        default=TARGET_DIR,
+        type=Path,
     )
 
     parser.add_argument(
         "--out-dir",
-        default="./target_preds",
+        default=OUT_DIR,
+        type=Path,
     )
 
     parser.add_argument(
         "--cache-folder",
-        default="./cache",
+        default=CACHE_DIR,
+        type=Path,
     )
 
     parser.add_argument(
@@ -277,7 +286,7 @@ def main():
         cache_folder=Path(args.cache_folder),
     )
 
-    zips = sorted(target_dir.glob("*.zip"))
+    zips = sorted(target_dir.rglob("*.zip"))
 
     if not zips:
         print("No zip files found.")

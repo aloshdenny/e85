@@ -56,6 +56,12 @@ from tribev2.demo_utils import TribeModel
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
+# ── Paths ────────────────────────────────────────────────────────────────────
+
+ZIPS_DIR  = Path("./fairface")        # FairFace category zip files
+OUT_DIR   = Path("./fairface_preds")  # output directory for per-category .npz files
+CACHE_DIR = Path("./cache")
+
 
 # ── Temp root: prefer RAM-backed /dev/shm if available ───────────────────────
 
@@ -259,9 +265,9 @@ def process_fairface_zips(model, zip_path: Path, out_dir: Path, tmp_root: Path,
 
 def main():
     parser = argparse.ArgumentParser(description="Batched FairFace -> TribeV2 inference.")
-    parser.add_argument("--zips-dir", default="./fairface")
-    parser.add_argument("--out-dir", default="./fairface_preds")
-    parser.add_argument("--cache-folder", default="./cache")
+    parser.add_argument("--zips-dir", default=ZIPS_DIR, type=Path)
+    parser.add_argument("--out-dir", default=OUT_DIR, type=Path)
+    parser.add_argument("--cache-folder", default=CACHE_DIR, type=Path)
     parser.add_argument("--duration", type=float, default=1.0,
                          help="Synthetic static-clip duration (s). Confirmed floor: "
                               "1.0s @ fps=2 gives a single clean valid timestep with "

@@ -60,7 +60,7 @@ GENERAL_ZIPS_DIR  = Path("./fairface")          # raw image zips per demographic
 TARGET_PREDS_DIR  = Path("./target_preds")      # target person npz predictions (/**/.npz)
 TARGET_DIR        = Path("./target")            # target person image zips (/**/.zip)
 CACHE_DIR         = Path("./cache")
-OUT_DIR           = Path("./abliterated_face")
+OUT_DIR           = Path("./abliterated")
 MASK_DIR          = OUT_DIR / "masks"
 
 OUT_DIR.mkdir(exist_ok=True)

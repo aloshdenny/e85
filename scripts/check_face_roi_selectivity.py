@@ -11,18 +11,21 @@ so results are directly comparable to what you'd actually ablate.
 
 Inputs expected (from infer_face_bulk.py output format -- .npz with a
 'preds' key of shape (N, 20484)):
-  --general-dir   folder of category .npz files (e.g. ./fairface_preds)
-  --target-npz    single .npz for the target person's face images
+  --general-dir   folder of category .npz files (default: ./fairface_preds)
+  --target-npz    target .npz file or directory (default: ./target_preds)
 
 Usage:
-  python check_face_roi_selectivity.py \
-      --general-dir ./fairface_preds \
-      --target-npz ./target_preds/**.npz
+  python scripts/check_face_roi_selectivity.py
 """
 
 import argparse
 import numpy as np
 from pathlib import Path
+
+# ── Paths ────────────────────────────────────────────────────────────────────
+
+GENERAL_DIR  = Path("./fairface_preds")   # folder of general-population .npz files
+TARGET_NPZ   = Path("./target_preds")     # target .npz file or directory (/**/*.npz)
 
 FACE_ROIS = {
     "OFA":  ["G_and_S_occipital_inf", "S_oc_middle_and_Lunatus", "Pole_occipital"],
@@ -97,8 +100,10 @@ def load_general_mean(general_dir: Path, per_category_average: bool):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--general-dir", required=True, type=Path)
-    parser.add_argument("--target-npz", required=True, type=Path)
+    parser.add_argument("--general-dir", default=GENERAL_DIR, type=Path,
+                        help="Folder of general population category .npz files (default: ./fairface_preds)")
+    parser.add_argument("--target-npz", default=TARGET_NPZ, type=Path,
+                        help="Target person .npz file or directory containing target .npz files (default: ./target_preds)")
     parser.add_argument("--pooled-mean", action="store_true",
                          help="Pool all general-population images before averaging "
                               "instead of averaging per-category means equally. "
@@ -135,9 +140,21 @@ def main():
     print(f"  {n_cats} category buckets, general_mean shape={general_mean.shape}")
 
     print(f"Loading target person from {args.target_npz} ...")
-    target_data = np.load(args.target_npz)
-    target_mean = target_data["preds"].mean(axis=0)
-    print(f"  {target_data['preds'].shape[0]} target images")
+    target_path = Path(args.target_npz)
+    if target_path.is_dir():
+        target_files = sorted(target_path.rglob("*.npz"))
+    elif target_path.is_file():
+        target_files = [target_path]
+    else:
+        target_files = sorted(Path(".").rglob(str(args.target_npz)))
+    
+    if not target_files:
+        raise FileNotFoundError(f"No target .npz files found matching {args.target_npz}")
+
+    target_preds_list = [np.load(f)["preds"] for f in target_files]
+    target_preds_cat = np.concatenate(target_preds_list, axis=0)
+    target_mean = target_preds_cat.mean(axis=0)
+    print(f"  Loaded {target_preds_cat.shape[0]} target images across {len(target_files)} file(s)")
 
     contrast = target_mean - general_mean  # (20484,)
 

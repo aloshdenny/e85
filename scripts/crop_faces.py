@@ -4,9 +4,11 @@ from PIL import Image
 from facenet_pytorch import MTCNN
 from tqdm import tqdm
 
+from pathlib import Path
+
 # ---- Config ----
-SRC_DIR = "./target/mia/"
-DST_DIR = "./target/target_faces"
+SRC_DIR = "./target"
+DST_DIR = "./target_faces"
 MARGIN = 40          # extra pixels around detected face box
 MIN_FACE_SIZE = 40   # skip tiny/false detections
 
@@ -24,12 +26,13 @@ mtcnn = MTCNN(
 
 os.makedirs(DST_DIR, exist_ok=True)
 
-exts = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
-files = [f for f in os.listdir(SRC_DIR) if f.lower().endswith(exts)]
+exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+src_path = Path(SRC_DIR)
+files = [p for p in src_path.rglob("*") if p.suffix.lower() in exts]
 
 skipped = 0
-for fname in tqdm(files, desc="Detecting & cropping faces"):
-    path = os.path.join(SRC_DIR, fname)
+for path in tqdm(files, desc="Detecting & cropping faces"):
+    fname = path.name
     try:
         img = Image.open(path).convert("RGB")
     except Exception as e:
