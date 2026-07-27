@@ -13,12 +13,24 @@ euro1_face.jpg, middle-eastern1_face.jpg, etc).
 
 Efficiency fix from the previous version: the JPEG->MP4 encode happened
 twice (once per pass) even though the images never change between passes --
-only the model weights do. Now:
+only the model weights do. Now the MP4 is encoded ONCE per image.
+
+CACHING BUG (same one hit in the earlier video-based project): TribeModel's
+video/image feature extractors cache their output keyed by input filepath
+(confirmed in the printed config: infra mode='cached', keep_in_ram=True).
+Reusing identical clip paths across both predict() calls made the second
+pass silently return the FIRST pass's cached features -- the abliterated
+weights were loaded correctly but never actually got exercised, which is
+why every delta came back as exactly 0.00000. Fix: the post-surgery pass
+runs on HARDLINKED duplicates of the same clip files (new filepath -> new
+cache key, same bytes -> no re-encode cost).
+
   1. Build all MP4 clips ONCE.
   2. Run baseline inference on them.
   3. Swap in the abliterated weights (in the same model instance).
-  4. Run inference AGAIN on the SAME clip files.
-  5. Delete the clips once, at the end.
+  4. Hardlink each clip to a new filename (cache-busting, ~free).
+  5. Run inference on the hardlinked duplicates.
+  6. Delete all clips (originals + duplicates) once, at the end.
 
 What a clean result looks like:
   Target group:  y drops sharply (large negative delta)
@@ -83,6 +95,33 @@ def build_clips_once(image_paths, tmp_dir: Path, duration: float, fps: int):
         write_static_clip(img, clip_path, duration=duration, fps=fps)
         rows.append((clip_path, tl, img_path.name))
     return rows
+
+
+def make_cache_busting_duplicates(rows, tmp_dir: Path):
+    """
+    IMPORTANT: TribeModel's video/image feature extractors cache output keyed
+    by input filepath (infra mode='cached', keep_in_ram=True -- confirmed in
+    the printed model config). Reusing the exact same clip paths for a second
+    predict() call after swapping in the abliterated weights will silently
+    return the FIRST pass's cached features -- the forward pass never
+    actually re-runs, so the weight change has zero measurable effect even
+    though the swap itself succeeded. This is the same bug from the earlier
+    video-based project.
+
+    Fix: hardlink each clip to a new filename (same bytes, new path -> new
+    cache key), so the second pass is forced to recompute. A hardlink is
+    essentially free (no data copy, same inode) since these live on
+    /dev/shm or a local tmp filesystem.
+    """
+    new_rows = []
+    for clip_path, tl, name in rows:
+        dup_path = tmp_dir / f"{tl}_pass2.mp4"
+        try:
+            os.link(clip_path, dup_path)
+        except OSError:
+            shutil.copy2(clip_path, dup_path)  # cross-device fallback
+        new_rows.append((dup_path, tl, name))
+    return new_rows
 
 
 def run_predict_on_clips(model, rows, duration: float):
@@ -153,8 +192,13 @@ def main():
         vjepa2_module.load_state_dict(state_dict)
         print("  Loaded (same model instance, weights swapped in place).")
 
-        print("Running post-surgery inference on the SAME clips...")
-        preds_after = run_predict_on_clips(model, rows, duration=args.duration)
+        print("Creating cache-busting duplicate clips for pass 2 "
+              "(hardlinks -- same bytes, new filepaths so the feature-extractor "
+              "cache can't return stale pre-surgery features)...")
+        rows_pass2 = make_cache_busting_duplicates(rows, tmp_dir)
+
+        print("Running post-surgery inference (on duplicated clip paths)...")
+        preds_after = run_predict_on_clips(model, rows_pass2, duration=args.duration)
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
