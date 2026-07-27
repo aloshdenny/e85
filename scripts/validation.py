@@ -145,6 +145,55 @@ def load_checkpoint_state_dict(checkpoint_path: Path):
     return torch.load(checkpoint_path, map_location="cpu")
 
 
+def clear_feature_cache_for_paths(model, clip_paths, cache_folder: Path, duration: float):
+    """
+    Belt-and-suspenders alongside make_cache_busting_duplicates(): that
+    function gives each pass a new filepath, which only busts the cache if
+    the cache key includes filepath. If the cache is content-addressed
+    instead (same bytes -> same key regardless of path), the hardlink trick
+    alone wouldn't help. This explicitly evicts by item_uid/cache_dict --
+    the exact mechanism proven to work in the earlier video-based
+    validation.py -- as a second, more certain layer of protection.
+    Wrapped defensively: if the internal API doesn't match (e.g. a TribeV2
+    version without .infra), this prints a warning rather than crashing,
+    since the hardlink trick may still be sufficient on its own.
+    """
+    try:
+        cache_dict = model.data.video_feature.infra.cache_dict
+        item_uid = model.data.video_feature.infra.item_uid
+        helper = model.data.video_feature._event_types_helper
+    except AttributeError as e:
+        print(f"  [WARN] Could not access video_feature cache internals ({e}) -- "
+              f"relying on hardlink cache-busting alone.")
+        return
+
+    cleared_mem = 0
+    for clip_path in clip_paths:
+        single_row_df = make_multi_row_df([(clip_path, "cacheclear")], duration=duration)
+        try:
+            events = helper.extract(single_row_df)
+        except Exception as e:
+            print(f"  [WARN] cache-clear extract failed for {clip_path.name}: {e}")
+            continue
+        for ev in events:
+            key = item_uid(ev)
+            if key in cache_dict:
+                del cache_dict[key]
+                cleared_mem += 1
+    print(f"  In-memory cache: cleared {cleared_mem} entries")
+
+    clip_names = {p.name for p in clip_paths}
+    cleared_disk = 0
+    for info_file in Path(cache_folder).rglob("*info.jsonl"):
+        try:
+            if info_file.exists() and any(n in info_file.read_text() for n in clip_names):
+                shutil.rmtree(info_file.parent)
+                cleared_disk += 1
+        except Exception:
+            pass
+    print(f"  On-disk cache: cleared {cleared_disk} cache dirs")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--val-dir", default=VAL_DIR, type=Path,
@@ -193,9 +242,16 @@ def main():
         print("  Loaded (same model instance, weights swapped in place).")
 
         print("Creating cache-busting duplicate clips for pass 2 "
-              "(hardlinks -- same bytes, new filepaths so the feature-extractor "
-              "cache can't return stale pre-surgery features)...")
+              "(hardlinks -- same bytes, new filepaths so a path-keyed "
+              "feature-extractor cache can't return stale pre-surgery features)...")
         rows_pass2 = make_cache_busting_duplicates(rows, tmp_dir)
+
+        print("Explicitly evicting cache entries too (belt-and-suspenders, "
+              "in case the cache is content- rather than path-addressed)...")
+        original_paths = [clip_path for clip_path, _, _ in rows]
+        dup_paths = [clip_path for clip_path, _, _ in rows_pass2]
+        clear_feature_cache_for_paths(model, original_paths + dup_paths,
+                                      args.cache_folder, args.duration)
 
         print("Running post-surgery inference (on duplicated clip paths)...")
         preds_after = run_predict_on_clips(model, rows_pass2, duration=args.duration)
