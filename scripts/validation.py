@@ -174,7 +174,24 @@ def redirect_feature_caches_to_scratch(model, scratch_dir: Path):
 
 
 def wipe_feature_caches(model, extractor_paths, scratch_dir: Path):
-    """Clears in-memory cache_dict at both levels AND wipes the scratch dir on disk."""
+    """
+    Clears in-memory cache_dict at both levels AND clears cached data on disk.
+
+    IMPORTANT: does NOT rmtree the scratch_dir itself. exca's CacheDict
+    resolves and stores a specific nested subfolder path internally on first
+    access (e.g. ".../HuggingFaceVideo._get_data,release/.../<hash>") and its
+    __contains__ check calls that path's .lstat() unconditionally -- it has
+    no handling for "the directory I resolved to no longer exists". Deleting
+    the scratch_dir root wholesale (as an earlier version of this function
+    did) orphans that reference and crashes on the next predict() call.
+
+    Instead: walk the tree and delete FILES only, leaving every directory
+    that already exists intact (now empty). This matches what the original
+    video-based validation.py does at a smaller scale (shutil.rmtree on only
+    the LEAF info.jsonl-containing folder, never the cache root) -- same
+    principle, applied recursively here since we don't know the exact
+    hash-suffixed subfolder name in advance.
+    """
     for path in extractor_paths:
         obj = model.data
         for part in path.split("."):
@@ -184,10 +201,13 @@ def wipe_feature_caches(model, extractor_paths, scratch_dir: Path):
             obj.infra.cache_dict.clear()
             print(f"  Cleared {n} in-memory entries from {path}.infra.cache_dict")
 
+    n_files = 0
     if scratch_dir.exists():
-        shutil.rmtree(scratch_dir)
-    scratch_dir.mkdir(parents=True, exist_ok=True)
-    print(f"  Wiped on-disk scratch cache: {scratch_dir}")
+        for p in scratch_dir.rglob("*"):
+            if p.is_file():
+                p.unlink()
+                n_files += 1
+    print(f"  Deleted {n_files} cached files on disk (directory tree preserved)")
 
 
 def main():
