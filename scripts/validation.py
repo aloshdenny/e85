@@ -35,7 +35,7 @@ import pandas as pd
 import torch
 
 sys.path.append(str(Path(__file__).parent))
-from infer_face_bulk import (
+from infer_fairface_bulk import (
     get_tmp_root, decode_image_from_zip, write_static_clip, make_multi_row_df,
     group_preds_by_timeline,
 )
