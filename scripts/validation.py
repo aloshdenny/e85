@@ -44,7 +44,7 @@ import cv2
 import torch
 
 sys.path.append(str(Path(__file__).parent))
-from infer_face_bulk import get_tmp_root, write_static_clip, make_multi_row_df, group_preds_by_timeline
+from infer_fairface_bulk import get_tmp_root, write_static_clip, make_multi_row_df, group_preds_by_timeline
 from tribev2.demo_utils import TribeModel
 
 CHECKPOINT = Path("./abliterated/vjepa2_face_abliterated.pt")
