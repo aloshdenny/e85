@@ -11,26 +11,32 @@ Group membership comes straight from the filename: anything matching
 the general/other-identity group (asian1_face.jpg, ebony1_face.jpg,
 euro1_face.jpg, middle-eastern1_face.jpg, etc).
 
-Efficiency fix from the previous version: the JPEG->MP4 encode happened
-twice (once per pass) even though the images never change between passes --
-only the model weights do. Now the MP4 is encoded ONCE per image.
+WHY TWO SEPARATE MODEL INSTANCES (this replaces three earlier attempts at
+busting a single shared instance's cache -- all of which returned an
+identical, suspiciously-exact 0.00000 delta on every image):
 
-CACHING BUG (same one hit in the earlier video-based project): TribeModel's
-video/image feature extractors cache their output keyed by input filepath
-(confirmed in the printed config: infra mode='cached', keep_in_ram=True).
-Reusing identical clip paths across both predict() calls made the second
-pass silently return the FIRST pass's cached features -- the abliterated
-weights were loaded correctly but never actually got exercised, which is
-why every delta came back as exactly 0.00000. Fix: the post-surgery pass
-runs on HARDLINKED duplicates of the same clip files (new filepath -> new
-cache key, same bytes -> no re-encode cost).
+  TribeModel's video_feature extractor uses exca's CacheDict, which is
+  disk-backed, lock-coordinated (the repo's own README documents an
+  "inflight.db" used to prevent deadlocks under concurrent access), and
+  almost certainly holds an OPEN handle/connection to its backing store
+  once first accessed. Deleting or redirecting files out from under an
+  ALREADY-OPEN handle doesn't invalidate what that handle already sees --
+  on POSIX, reads through an open fd keep working against the old inode
+  regardless of what happens to the directory entry. That's consistent
+  with every attempt failing identically: in-memory dict clearing, on-disk
+  file deletion, and cache-folder redirection all operate on the same
+  live object from outside, and none of them can un-open an open handle.
 
-  1. Build all MP4 clips ONCE.
-  2. Run baseline inference on them.
-  3. Swap in the abliterated weights (in the same model instance).
-  4. Hardlink each clip to a new filename (cache-busting, ~free).
-  5. Run inference on the hardlinked duplicates.
-  6. Delete all clips (originals + duplicates) once, at the end.
+  Two fully independent TribeModel instances, each pointed at its OWN
+  cache folder, share no Python object and no open file handle at all.
+  There is nothing to bust because nothing is shared. This sidesteps the
+  problem instead of continuing to fight exca's internals from outside.
+
+  1. Build all MP4 clips ONCE (images never change between passes).
+  2. Load model_before, run baseline inference.
+  3. Load model_after (SEPARATE instance, separate cache folder), load the
+     abliterated checkpoint into it, run inference on the SAME clip files.
+  4. Delete clips once, at the end.
 
 What a clean result looks like:
   Target group:  y drops sharply (large negative delta)
@@ -82,7 +88,7 @@ def discover_val_images(val_dir: Path, target_prefix: str):
 def build_clips_once(image_paths, tmp_dir: Path, duration: float, fps: int):
     """
     Reads each image and writes ONE synthetic clip per image, used for BOTH
-    predict() passes below. Returns list of (clip_path, timeline_id, display_name).
+    model instances below. Returns list of (clip_path, timeline_id, display_name).
     """
     rows = []
     for i, img_path in enumerate(image_paths):
@@ -95,33 +101,6 @@ def build_clips_once(image_paths, tmp_dir: Path, duration: float, fps: int):
         write_static_clip(img, clip_path, duration=duration, fps=fps)
         rows.append((clip_path, tl, img_path.name))
     return rows
-
-
-def make_cache_busting_duplicates(rows, tmp_dir: Path):
-    """
-    IMPORTANT: TribeModel's video/image feature extractors cache output keyed
-    by input filepath (infra mode='cached', keep_in_ram=True -- confirmed in
-    the printed model config). Reusing the exact same clip paths for a second
-    predict() call after swapping in the abliterated weights will silently
-    return the FIRST pass's cached features -- the forward pass never
-    actually re-runs, so the weight change has zero measurable effect even
-    though the swap itself succeeded. This is the same bug from the earlier
-    video-based project.
-
-    Fix: hardlink each clip to a new filename (same bytes, new path -> new
-    cache key), so the second pass is forced to recompute. A hardlink is
-    essentially free (no data copy, same inode) since these live on
-    /dev/shm or a local tmp filesystem.
-    """
-    new_rows = []
-    for clip_path, tl, name in rows:
-        dup_path = tmp_dir / f"{tl}_pass2.mp4"
-        try:
-            os.link(clip_path, dup_path)
-        except OSError:
-            shutil.copy2(clip_path, dup_path)  # cross-device fallback
-        new_rows.append((dup_path, tl, name))
-    return new_rows
 
 
 def run_predict_on_clips(model, rows, duration: float):
@@ -145,71 +124,6 @@ def load_checkpoint_state_dict(checkpoint_path: Path):
     return torch.load(checkpoint_path, map_location="cpu")
 
 
-def redirect_feature_caches_to_scratch(model, scratch_dir: Path):
-    """
-    The full model config has TWO separate caching layers for video features:
-      model.data.video_feature.infra        -- outer, per-clip cache
-      model.data.video_feature.image.infra  -- inner, per-frame cache (this is
-                                                the one that actually memoizes
-                                                the vjepa2 computation)
-    Our first fix only cleared the outer one -- which is exactly why the bug
-    persisted. Redirecting BOTH to a disposable scratch folder (separate from
-    --cache-folder, which also holds downloaded model weights) lets us wipe
-    the whole scratch dir between passes with zero risk to the weights.
-    """
-    redirected = []
-    for path in ["video_feature", "video_feature.image"]:
-        obj = model.data
-        ok = True
-        for part in path.split("."):
-            obj = getattr(obj, part, None)
-            if obj is None:
-                ok = False
-                break
-        if ok and hasattr(obj, "infra"):
-            obj.infra.folder = scratch_dir
-            redirected.append(path)
-    print(f"  Redirected cache folders to scratch for: {redirected}")
-    return redirected
-
-
-def wipe_feature_caches(model, extractor_paths, scratch_dir: Path):
-    """
-    Clears in-memory cache_dict at both levels AND clears cached data on disk.
-
-    IMPORTANT: does NOT rmtree the scratch_dir itself. exca's CacheDict
-    resolves and stores a specific nested subfolder path internally on first
-    access (e.g. ".../HuggingFaceVideo._get_data,release/.../<hash>") and its
-    __contains__ check calls that path's .lstat() unconditionally -- it has
-    no handling for "the directory I resolved to no longer exists". Deleting
-    the scratch_dir root wholesale (as an earlier version of this function
-    did) orphans that reference and crashes on the next predict() call.
-
-    Instead: walk the tree and delete FILES only, leaving every directory
-    that already exists intact (now empty). This matches what the original
-    video-based validation.py does at a smaller scale (shutil.rmtree on only
-    the LEAF info.jsonl-containing folder, never the cache root) -- same
-    principle, applied recursively here since we don't know the exact
-    hash-suffixed subfolder name in advance.
-    """
-    for path in extractor_paths:
-        obj = model.data
-        for part in path.split("."):
-            obj = getattr(obj, part, None)
-        if obj is not None and hasattr(obj, "infra") and hasattr(obj.infra, "cache_dict"):
-            n = len(obj.infra.cache_dict)
-            obj.infra.cache_dict.clear()
-            print(f"  Cleared {n} in-memory entries from {path}.infra.cache_dict")
-
-    n_files = 0
-    if scratch_dir.exists():
-        for p in scratch_dir.rglob("*"):
-            if p.is_file():
-                p.unlink()
-                n_files += 1
-    print(f"  Deleted {n_files} cached files on disk (directory tree preserved)")
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--val-dir", default=VAL_DIR, type=Path,
@@ -218,7 +132,15 @@ def main():
                         help="Filename prefix identifying the target person (default: mia)")
     parser.add_argument("--checkpoint", default=CHECKPOINT, type=Path)
     parser.add_argument("--mask", default=MASK_PATH, type=Path)
-    parser.add_argument("--cache-folder", default=CACHE_DIR, type=Path)
+    parser.add_argument("--cache-folder", default=CACHE_DIR, type=Path,
+                        help="Base cache folder. Each model instance gets its own "
+                             "SEPARATE subfolder under here (see --no-shared-cache-root "
+                             "to fully isolate them elsewhere instead).")
+    parser.add_argument("--no-shared-cache-root", action="store_true",
+                        help="Put each model's cache in an isolated temp location "
+                             "instead of subfolders under --cache-folder. Use this if "
+                             "you suspect any sharing at the --cache-folder root level "
+                             "itself (e.g. lock files) could still cause interference.")
     parser.add_argument("--duration", type=float, default=1.0)
     parser.add_argument("--fps", type=int, default=2)
     args = parser.parse_args()
@@ -237,46 +159,55 @@ def main():
 
     tmp_root = get_tmp_root()
     tmp_dir = Path(tempfile.mkdtemp(prefix="validation_", dir=tmp_root))
-    print(f"\nTemp dir (built once, reused across both passes): {tmp_dir}")
+    print(f"\nTemp dir (clips built once, used by BOTH model instances): {tmp_dir}")
 
     all_paths = target_paths + general_paths
+
+    if args.no_shared_cache_root:
+        cache_before = Path(tempfile.mkdtemp(prefix="cache_before_", dir=tmp_root))
+        cache_after = Path(tempfile.mkdtemp(prefix="cache_after_", dir=tmp_root))
+    else:
+        cache_before = args.cache_folder / "validation_before"
+        cache_after = args.cache_folder / "validation_after"
+        cache_before.mkdir(parents=True, exist_ok=True)
+        cache_after.mkdir(parents=True, exist_ok=True)
+
+    print(f"model_before cache: {cache_before}")
+    print(f"model_after cache:  {cache_after}")
+    print("(Two separate model instances, two separate cache folders -- no shared "
+          "object, no shared open file handle, nothing for a stale cache to hide in.)")
+
     try:
-        print("Building MP4 clips (once)...")
+        print("\nBuilding MP4 clips (once, shared by both passes)...")
         rows = build_clips_once(all_paths, tmp_dir, duration=args.duration, fps=args.fps)
         print(f"  {len(rows)} clips built")
 
-        print("\nLoading TribeModel (baseline weights)...")
-        model = TribeModel.from_pretrained("facebook/tribev2", cache_folder=args.cache_folder)
-
-        scratch_cache = Path(tempfile.mkdtemp(prefix="feature_cache_scratch_", dir=tmp_root))
-        print(f"Redirecting feature-extractor caches to disposable scratch dir: {scratch_cache}")
-        cache_paths = redirect_feature_caches_to_scratch(model, scratch_cache)
-
+        print("\nLoading model_before (baseline weights)...")
+        model_before = TribeModel.from_pretrained("facebook/tribev2", cache_folder=cache_before)
         print("Running baseline inference...")
-        preds_before = run_predict_on_clips(model, rows, duration=args.duration)
+        preds_before = run_predict_on_clips(model_before, rows, duration=args.duration)
+        del model_before
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-        print(f"\nLoading abliterated checkpoint: {args.checkpoint}")
-        vjepa2_module = model.data.video_feature.image.model.model
+        print("\nLoading model_after (fresh instance, separate cache)...")
+        model_after = TribeModel.from_pretrained("facebook/tribev2", cache_folder=cache_after)
+        print(f"Loading abliterated checkpoint into model_after: {args.checkpoint}")
+        vjepa2_module = model_after.data.video_feature.image.model.model
         state_dict = load_checkpoint_state_dict(args.checkpoint)
-        vjepa2_module.load_state_dict(state_dict)
-        print("  Loaded (same model instance, weights swapped in place).")
-
-        print("Wiping BOTH cache layers (outer video_feature + inner "
-              "video_feature.image) before pass 2...")
-        wipe_feature_caches(model, cache_paths, scratch_cache)
-
-        print("Creating cache-busting duplicate clips too (extra safety, "
-              "cheap hardlinks)...")
-        rows_pass2 = make_cache_busting_duplicates(rows, tmp_dir)
-
-        print("Running post-surgery inference (on duplicated clip paths)...")
-        preds_after = run_predict_on_clips(model, rows_pass2, duration=args.duration)
+        load_result = vjepa2_module.load_state_dict(state_dict, strict=False)
+        print(f"  missing_keys={len(load_result.missing_keys)} "
+              f"unexpected_keys={len(load_result.unexpected_keys)}")
+        print("Running post-surgery inference on the SAME clip files...")
+        preds_after = run_predict_on_clips(model_after, rows, duration=args.duration)
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         print(f"\nTemp clips deleted: {tmp_dir}")
-        if 'scratch_cache' in dir():
-            shutil.rmtree(scratch_cache, ignore_errors=True)
+        if args.no_shared_cache_root:
+            shutil.rmtree(cache_before, ignore_errors=True)
+            shutil.rmtree(cache_after, ignore_errors=True)
+            print("Isolated temp cache folders deleted.")
 
     # ── Compare ───────────────────────────────────────────────────────────
     def summarize(group_name, paths):
@@ -319,6 +250,16 @@ def main():
         print("   not the target person specifically. Consider adding an explicit")
         print("   difference-of-means contrastive component to direction-finding,")
         print("   on top of the existing weighted-PCA approach.")
+    elif target_delta == 0.0 and general_delta == 0.0:
+        print(">> STILL ZERO. If this happens even with two fully independent model")
+        print("   instances and separate cache folders, the issue is almost certainly")
+        print("   NOT caching -- go back to smoke_test_vjepa2.py's result: weights and")
+        print("   raw forward pass both differed there. Suspect instead: (a) the mask")
+        print("   file doesn't match what was actually operated on, (b) tolerance sign/")
+        print("   magnitude produces a change too small to survive the remaining ~35")
+        print("   encoder layers + TRIBE's projector at 5-decimal precision (unlikely")
+        print("   to be EXACTLY 0.00000 if so, but worth printing full float precision")
+        print("   to rule out rounding), or (c) --checkpoint path is stale/wrong file.")
     else:
         print(">> Inconclusive / target didn't drop as expected -- check tolerance sign,")
         print("   checkpoint loading, and whether the mask matches what was ablated.")
