@@ -44,7 +44,7 @@ DATA LAYOUT ASSUMPTIONS (adjust via CLI flags if yours differs):
                          with filenames matching target-preds-npz's 'filenames'
 
 Usage:
-  python face_abliteration.py \
+  python scripts/abliteration.py \
     --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
     --target-preds-npz ./target_preds/mia.npz --target-zip ./target_faces/mia.zip \
     --tolerance -1.0 --n_components 3 --n_layers 6
