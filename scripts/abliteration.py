@@ -6,6 +6,17 @@ TribeV2, targeting face-selective cortical ROIs specifically (not the full
 31-ROI table from layer_analysis.py / abliteration.py, which was built for
 content-category work like porn/food addiction).
 
+Based on check_face_roi_selectivity.py's diagnostic on Mia's data:
+  - OFA (+0.025) and FFA (+0.014) show clean, individually-dominant contrast.
+  - STS/ATL/TP/PREC/MPFC/PCC were weak/near-zero for this target -- excluded
+    by default. Pass --include-secondary to add TP+ATL back in (small but
+    positive margin) if you want broader identity coverage.
+  - V4/MT ranked surprisingly high (#2, #4) -- likely a photometric confound
+    (lighting/background/compression), not real identity signal, since MT is
+    motion-selective and your inputs are static. Not used as ablation targets
+    regardless, but worth a manual sanity check on your image sets before
+    trusting this contrast further.
+
 KEY ARCHITECTURAL DIFFERENCE FROM abliteration.py:
   abliteration.py collects activations by decoding real .mp4 video files
   through iter_clips_from_video() (torchvision VideoReader), because its
@@ -21,15 +32,22 @@ KEY ARCHITECTURAL DIFFERENCE FROM abliteration.py:
   target_preds/*.npz files (preds[:, mask].mean() per image), since those
   already contain the full per-image predicted vertex vector.
 
-DATA LAYOUT ASSUMPTIONS:
-  --general-preds-dir   folder of category .npz (from infer_fairface_bulk.py),
-                         default: ./fairface_preds
-  --general-zips-dir    folder of matching category .zip files, default: ./fairface
-  --target-preds-npz    target person's .npz file or directory, default: ./target_preds
-  --target-zip          zip file or directory containing target raw images, default: ./target
+DATA LAYOUT ASSUMPTIONS (adjust via CLI flags if yours differs):
+  --general-preds-dir   folder of category .npz (from infer_face_bulk.py),
+                         each with 'preds' (N,20484) and 'filenames' (N,)
+  --general-zips-dir    folder of the matching category .zip files (same
+                         stem as each .npz) -- needed to re-read raw images
+                         for activation collection (npz only stored brain
+                         predictions, not vjepa2 activations)
+  --target-preds-npz    target person's .npz (same format)
+  --target-zip          zip file containing the target person's raw images,
+                         with filenames matching target-preds-npz's 'filenames'
 
 Usage:
-  python scripts/abliteration.py --tolerance -1.0 --n_components 3 --n_layers 6
+  python abliteration.py \
+      --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
+      --target-preds-npz ./target_preds/mia.npz --target-zip ./target_faces/mia.zip \
+      --tolerance -1.0 --n_components 3 --n_layers 6
 """
 
 import os, gc, sys, json, warnings, logging, argparse, zipfile, random
@@ -53,19 +71,6 @@ except ImportError:
     HAVE_CHUNK_UTILS = False
     print("[WARN] chunk_utils not found -- will save with plain torch.save instead.")
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-
-GENERAL_PREDS_DIR = Path("./fairface_preds")   # npz predictions per demographic bucket
-GENERAL_ZIPS_DIR  = Path("./fairface")          # raw image zips per demographic bucket
-TARGET_PREDS_DIR  = Path("./target_preds")      # target person npz predictions (/**/.npz)
-TARGET_DIR        = Path("./target")            # target person image zips (/**/.zip)
-CACHE_DIR         = Path("./cache")
-OUT_DIR           = Path("./abliterated")
-MASK_DIR          = OUT_DIR / "masks"
-
-OUT_DIR.mkdir(exist_ok=True)
-MASK_DIR.mkdir(exist_ok=True)
-
 # ── ROI definitions (Destrieux exact labels) ─────────────────────────────────
 
 PRIMARY_FACE_ROIS = {
@@ -76,6 +81,11 @@ SECONDARY_FACE_ROIS = {
     "TP":  ["Pole_temporal"],
     "ATL": ["G_temporal_inf", "G_oc-temp_med-Parahip"],
 }
+
+OUT_DIR = Path("./abliterated_face")
+OUT_DIR.mkdir(exist_ok=True)
+MASK_DIR = OUT_DIR / "masks"
+MASK_DIR.mkdir(exist_ok=True)
 
 CLIP_FRAMES = 16    # vjepa2's native expected temporal length
 IMG_SIZE    = 256
@@ -189,48 +199,19 @@ def sample_general_images(general_preds_dir: Path, general_zips_dir: Path,
 
 
 def load_target_images(target_preds_npz: Path, target_zip: Path, mask: np.ndarray):
-    preds_path = Path(target_preds_npz)
-    if preds_path.is_dir():
-        npz_files = sorted(preds_path.rglob("*.npz"))
-    elif preds_path.is_file():
-        npz_files = [preds_path]
-    else:
-        npz_files = sorted(Path(".").rglob(str(preds_path)))
-
-    if not npz_files:
-        raise FileNotFoundError(f"No target .npz files found matching {target_preds_npz}")
-
-    zip_path = Path(target_zip)
-    if zip_path.is_dir():
-        zip_files = sorted(zip_path.rglob("*.zip"))
-    elif zip_path.is_file():
-        zip_files = [zip_path]
-    else:
-        zip_files = sorted(Path(".").rglob(str(target_zip)))
-
-    if not zip_files:
-        raise FileNotFoundError(f"No target .zip files found matching {target_zip}")
-
+    data = np.load(target_preds_npz)
+    preds = data["preds"]
+    filenames = data["filenames"]
     samples = []
-    for npz_file in npz_files:
-        data = np.load(npz_file)
-        preds = data["preds"]
-        filenames = data["filenames"]
-
-        # find matching zip by stem, or fallback to first available zip
-        matching_zips = [z for z in zip_files if z.stem == npz_file.stem]
-        zf_path = matching_zips[0] if matching_zips else zip_files[0]
-
-        with zipfile.ZipFile(zf_path, "r") as zf:
-            for i, name in enumerate(filenames):
-                try:
-                    img = decode_image_from_zip(zf, str(name))
-                    y = float(preds[i][mask].mean())
-                    samples.append((img, y))
-                except Exception as e:
-                    print(f"  [WARN] target/{name}: {e}")
-
-    print(f"  Loaded {len(samples)} target images across {len(npz_files)} file(s)")
+    with zipfile.ZipFile(target_zip, "r") as zf:
+        for i, name in enumerate(filenames):
+            try:
+                img = decode_image_from_zip(zf, str(name))
+                y = float(preds[i][mask].mean())
+                samples.append((img, y))
+            except Exception as e:
+                print(f"  [WARN] target/{name}: {e}")
+    print(f"  Loaded {len(samples)} target images")
     return samples
 
 
@@ -380,19 +361,15 @@ def apply_surgery(encoder_blocks, all_dirs_by_layer, tolerance):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--general-preds-dir", default=GENERAL_PREDS_DIR, type=Path,
-                        help="Folder of category .npz files (default: ./fairface_preds)")
-    parser.add_argument("--general-zips-dir", default=GENERAL_ZIPS_DIR, type=Path,
-                        help="Folder of matching category .zip files (default: ./fairface)")
-    parser.add_argument("--target-preds-npz", default=TARGET_PREDS_DIR, type=Path,
-                        help="Target person .npz file or directory (default: ./target_preds)")
-    parser.add_argument("--target-zip", default=TARGET_DIR, type=Path,
-                        help="Zip file or directory containing target raw images (default: ./target)")
-    parser.add_argument("--cache-folder", default=CACHE_DIR, type=Path)
+    parser.add_argument("--general-preds-dir", required=True, type=Path)
+    parser.add_argument("--general-zips-dir", required=True, type=Path)
+    parser.add_argument("--target-preds-npz", required=True, type=Path)
+    parser.add_argument("--target-zip", required=True, type=Path)
+    parser.add_argument("--cache-folder", default="./cache", type=Path)
     parser.add_argument("--tolerance", type=float, default=-1.0,
                         help="-1=full suppression, 0=neutral, +1=amplify")
     parser.add_argument("--n_components", type=int, default=3)
-    parser.add_argument("--n_layers", type=int, default=6)
+    parser.add_argument("--n_layers", type=int, default=5)
     parser.add_argument("--include-secondary", action="store_true",
                         help="Include TP+ATL in the face mask (small positive margin "
                              "per the diagnostic, excluded by default).")
@@ -465,14 +442,26 @@ def main():
 
     tag = f"t{args.tolerance}_c{args.n_components}_L{len(target_layers)}"
     out_name = f"vjepa2_face_abliterated_{tag}.pt"
+
+    # HF-format checkpoint (config.json + weights) -- REQUIRED for validation.
+    # TribeModel's video_feature.image extractor reconstructs a fresh vjepa2
+    # model internally from model_name on every predict() call (confirmed via
+    # smoke_test_model_identity.py + smoke_test_model_name_redirect.py) -- a
+    # raw state_dict alone can't be loaded via that path, since the extractor
+    # calls AutoModel.from_pretrained(model_name), not load_state_dict().
+    hf_checkpoint_dir = OUT_DIR / "vjepa2_hf_checkpoint"
+    vjepa2_module.save_pretrained(hf_checkpoint_dir)
+    print(f"\n  HF-format checkpoint (for validation.py's model_name redirect) "
+          f"-> {hf_checkpoint_dir}")
+
     if HAVE_CHUNK_UTILS:
         chunk_utils.save_chunked(vjepa2_module.state_dict(), OUT_DIR / out_name)
         chunk_utils.save_chunked(vjepa2_module.state_dict(), OUT_DIR / "vjepa2_face_abliterated.pt")
-        print(f"\n  Saved (chunked) -> {OUT_DIR / out_name}")
+        print(f"  Saved (chunked, raw state_dict) -> {OUT_DIR / out_name}")
     else:
         torch.save(vjepa2_module.state_dict(), OUT_DIR / out_name)
         torch.save(vjepa2_module.state_dict(), OUT_DIR / "vjepa2_face_abliterated.pt")
-        print(f"\n  Saved -> {OUT_DIR / out_name}")
+        print(f"  Saved (raw state_dict) -> {OUT_DIR / out_name}")
 
     surgery_log = {
         "mask_rois": "OFA+FFA+TP+ATL" if args.include_secondary else "OFA+FFA",
