@@ -46,7 +46,7 @@ DATA LAYOUT ASSUMPTIONS (adjust via CLI flags if yours differs):
 Usage:
   python scripts/abliteration.py \
     --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
-    --target-preds-npz ./target_preds/mia.npz --target-zip ./target_faces/mia.zip \
+    --target-preds-npz ./target_preds/mia.npz --target-zip ./target/mia.zip \
     --tolerance -1.0 --n_components 3 --n_layers 6
 """
 
@@ -82,7 +82,7 @@ SECONDARY_FACE_ROIS = {
     "ATL": ["G_temporal_inf", "G_oc-temp_med-Parahip"],
 }
 
-OUT_DIR = Path("./abliterated_face")
+OUT_DIR = Path("./abliterated")
 OUT_DIR.mkdir(exist_ok=True)
 MASK_DIR = OUT_DIR / "masks"
 MASK_DIR.mkdir(exist_ok=True)

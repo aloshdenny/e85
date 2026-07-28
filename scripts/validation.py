@@ -35,7 +35,7 @@ THREE CONFIRMED FIXES COMBINED HERE, after a long debugging chain:
 
 Usage:
   python scripts/validation.py --val-dir ./val --target-prefix mia \
-      --hf-checkpoint-dir ./abliterated_face/vjepa2_hf_checkpoint
+      --hf-checkpoint-dir ./abliterated/vjepa2_hf_checkpoint
 """
 
 import os, sys, warnings, logging, argparse, tempfile, shutil
@@ -52,8 +52,8 @@ sys.path.append(str(Path(__file__).parent))
 from infer_fairface_bulk import get_tmp_root, write_static_clip, make_multi_row_df, group_preds_by_timeline
 from tribev2.demo_utils import TribeModel
 
-HF_CHECKPOINT_DIR = Path("./abliterated_face/vjepa2_hf_checkpoint")
-MASK_PATH  = Path("./abliterated_face/masks/face_mask.npy")
+HF_CHECKPOINT_DIR = Path("./abliterated/vjepa2_hf_checkpoint")
+MASK_PATH  = Path("./abliterated/masks/face_mask.npy")
 CACHE_DIR  = Path("./cache")
 VAL_DIR    = Path("./val")
 
