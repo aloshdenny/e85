@@ -44,10 +44,10 @@ DATA LAYOUT ASSUMPTIONS (adjust via CLI flags if yours differs):
                          with filenames matching target-preds-npz's 'filenames'
 
 Usage:
-  python abliteration.py \
-      --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
-      --target-preds-npz ./target_preds/mia.npz --target-zip ./target_faces/mia.zip \
-      --tolerance -1.0 --n_components 3 --n_layers 6
+  python face_abliteration.py \
+    --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
+    --target-preds-npz ./target_preds/mia.npz --target-zip ./target_faces/mia.zip \
+    --tolerance -1.0 --n_components 3 --n_layers 6
 """
 
 import os, gc, sys, json, warnings, logging, argparse, zipfile, random
@@ -281,7 +281,24 @@ def pick_top_layers(profile, n_layers_wanted):
 # ── Activation collection at a specific layer ────────────────────────────────
 
 def collect_layer_activations(vjepa2_module, encoder_blocks, layer_idx,
-                               target_samples, general_samples):
+                               target_samples, general_samples,
+                               cache_dir: Path = None):
+    """
+    Returns X, y (order: target_samples first, then general_samples -- caller
+    knows n_target = len(target_samples) and can split accordingly).
+
+    If cache_dir is given, raw X/y are saved to disk after collection (and
+    loaded from there on a rerun instead of re-collecting) -- collection is
+    the expensive part; iterating on direction-finding math shouldn't require
+    re-running it every time.
+    """
+    if cache_dir is not None:
+        x_path = cache_dir / f"raw_X_L{layer_idx}.npy"
+        y_path = cache_dir / f"raw_y_L{layer_idx}.npy"
+        if x_path.exists() and y_path.exists():
+            print(f"  [L{layer_idx}] loading cached raw activations from {cache_dir}")
+            return np.load(x_path), np.load(y_path)
+
     hook_buffer = [None]
     def hook_fn(module, inp, output):
         hidden = output[0] if isinstance(output, tuple) else output
@@ -302,12 +319,26 @@ def collect_layer_activations(vjepa2_module, encoder_blocks, layer_idx,
     finally:
         handle.remove()
     free()
-    return np.stack(X), np.array(y_list, dtype=np.float32)
+    X_arr = np.stack(X)
+    y_arr = np.array(y_list, dtype=np.float32)
+
+    if cache_dir is not None:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        np.save(cache_dir / f"raw_X_L{layer_idx}.npy", X_arr)
+        np.save(cache_dir / f"raw_y_L{layer_idx}.npy", y_arr)
+
+    return X_arr, y_arr
 
 
-# ── Direction finding (reused verbatim from abliteration.py) ─────────────────
+# ── Direction finding ─────────────────────────────────────────────────────────
 
 def find_directions(X, y, n_components, label):
+    """Original weighted-PCA approach. Kept for use as SECONDARY components
+    (on the residual after removing the contrastive direction below) -- on
+    its own this was validated to produce a non-selective direction (general
+    population dropped as much or more than the target person), since it
+    optimizes for 'what makes this ROI fire strongly' rather than 'what is
+    specific to the target identity'."""
     y_range = y.max() - y.min()
     if y_range < 1e-9:
         weights = np.ones(len(y)) / len(y)
@@ -325,6 +356,48 @@ def find_directions(X, y, n_components, label):
             dirs[i] *= -1
             print(f"  [{label}] flipped direction {i}")
     return dirs
+
+
+def find_directions_contrastive(X, y, n_target, n_components, label):
+    """
+    Primary direction = normalize(mean(X_target) - mean(X_general)) -- a true
+    difference-of-means contrast, which is what actually isolates 'target
+    identity' rather than 'strong generic activation of this ROI'. This is
+    the fix for the confound validation.py exposed: weighted-PCA alone let
+    general-population images with strong OFA/FFA response dominate the
+    direction just as much as the target person did.
+
+    If n_components > 1, additional directions come from weighted-PCA
+    (find_directions, same as before) run on the RESIDUAL after projecting
+    out the primary direction -- these can still capture target-relevant
+    variance beyond the raw mean shift, but they no longer carry the entire
+    burden of separating target from general on their own.
+    """
+    X_target = X[:n_target]
+    X_general = X[n_target:]
+
+    primary = X_target.mean(axis=0) - X_general.mean(axis=0)
+    norm = np.linalg.norm(primary)
+    if norm < 1e-9:
+        raise ValueError(f"[{label}] target and general means are identical -- "
+                         f"no contrastive signal at this layer.")
+    primary = primary / norm
+
+    proj = X @ primary
+    print(f"  [{label}] contrastive direction: target proj mean={proj[:n_target].mean():.4f}, "
+          f"general proj mean={proj[n_target:].mean():.4f}, "
+          f"separation={proj[:n_target].mean() - proj[n_target:].mean():+.4f}")
+
+    dirs = [primary]
+
+    if n_components > 1:
+        # Remove primary component from every sample, then find secondary
+        # directions in what's left via the original weighted-PCA approach.
+        residual = X - np.outer(proj, primary)
+        secondary = find_directions(residual, y, n_components - 1, f"{label}-residual")
+        dirs.extend(secondary)
+
+    return np.stack(dirs)
 
 
 # ── Surgery (reused verbatim from abliteration.py) ───────────────────────────
@@ -377,6 +450,16 @@ def main():
                         help="Total general-population images to sample for activation "
                              "collection (spread across category buckets).")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--use-weighted-pca-only", action="store_true",
+                        help="Use the original weighted-PCA-only direction finding "
+                             "instead of the contrastive (difference-of-means) primary "
+                             "direction. NOT recommended -- validated to produce a "
+                             "non-selective ablation (general population dropped as much "
+                             "or more than the target person). Kept as an option for "
+                             "comparison, not as the default path.")
+    parser.add_argument("--source-model-name", default="facebook/vjepa2-vitg-fpc64-256",
+                        help="Original HF model id, used to save the (unmodified) video "
+                             "processor config alongside your abliterated weights.")
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -424,12 +507,19 @@ def main():
     print("PHASE 3 -- Per-layer activation collection + direction finding")
     print("="*60)
     dirs_by_layer = {}
+    n_target = len(target_samples)
+    activation_cache_dir = OUT_DIR / "raw_activations"
+
     for layer_idx in target_layers:
         print(f"\nCollecting activations at L{layer_idx}...")
         X, y = collect_layer_activations(vjepa2_module, encoder_blocks, layer_idx,
-                                         target_samples, general_samples)
+                                         target_samples, general_samples,
+                                         cache_dir=activation_cache_dir)
         print(f"  X.shape={X.shape} y range=[{y.min():.4f},{y.max():.4f}]")
-        dirs = find_directions(X, y, args.n_components, f"L{layer_idx}")
+        if args.use_weighted_pca_only:
+            dirs = find_directions(X, y, args.n_components, f"L{layer_idx}")
+        else:
+            dirs = find_directions_contrastive(X, y, n_target, args.n_components, f"L{layer_idx}")
         dirs_by_layer[layer_idx] = dirs
         np.save(OUT_DIR / f"directions_L{layer_idx}.npy", dirs)
         del X, y
@@ -453,6 +543,13 @@ def main():
     vjepa2_module.save_pretrained(hf_checkpoint_dir)
     print(f"\n  HF-format checkpoint (for validation.py's model_name redirect) "
           f"-> {hf_checkpoint_dir}")
+
+    print(f"  Saving (unmodified) video processor config alongside it...")
+    from transformers import AutoVideoProcessor
+    processor = AutoVideoProcessor.from_pretrained(args.source_model_name)
+    processor.save_pretrained(hf_checkpoint_dir)
+    print(f"  Processor config saved -> {hf_checkpoint_dir} "
+          f"(this directory is now validation-ready on its own)")
 
     if HAVE_CHUNK_UTILS:
         chunk_utils.save_chunked(vjepa2_module.state_dict(), OUT_DIR / out_name)
