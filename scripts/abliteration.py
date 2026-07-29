@@ -481,7 +481,7 @@ def main():
     parser.add_argument("--include-secondary", action="store_true",
                         help="Include TP+ATL in the face mask (small positive margin "
                              "per the diagnostic, excluded by default).")
-    parser.add_argument("--general-sample-size", type=int, default=2000,
+    parser.add_argument("--general-sample-size", type=int, default=3000,
                         help="Total general-population images to sample for activation "
                              "collection (spread across category buckets).")
     parser.add_argument("--seed", type=int, default=0)
