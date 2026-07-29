@@ -44,10 +44,10 @@ DATA LAYOUT ASSUMPTIONS (adjust via CLI flags if yours differs):
                          with filenames matching target-preds-npz's 'filenames'
 
 Usage:
-  python scripts/abliteration.py \
-    --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
-    --target-preds-npz ./target_preds/mia.npz --target-zip ./target/mia.zip \
-    --tolerance -1.0 --n_components 3 --n_layers 6
+  python abliteration.py \
+      --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
+      --target-preds-npz ./target_preds/mia.npz --target-zip ./target/mia.zip \
+      --tolerance -1.0 --n_components 3 --n_layers 5
 """
 
 import os, gc, sys, json, warnings, logging, argparse, zipfile, random
@@ -82,7 +82,7 @@ SECONDARY_FACE_ROIS = {
     "ATL": ["G_temporal_inf", "G_oc-temp_med-Parahip"],
 }
 
-OUT_DIR = Path("./abliterated")
+OUT_DIR = Path("./abliterated_face")
 OUT_DIR.mkdir(exist_ok=True)
 MASK_DIR = OUT_DIR / "masks"
 MASK_DIR.mkdir(exist_ok=True)
@@ -132,6 +132,39 @@ def build_face_mask(include_secondary: bool):
 
 # ── Image -> vjepa2 input tensor (static repeated frame) ─────────────────────
 
+# Fixed reference values for photometric normalization. Chosen close to the
+# general population's own typical range (not an extreme target) so images
+# aren't pushed unnaturally far from realistic appearance -- just brought
+# onto a common scale so contrast/luminance stop being a usable signal for
+# telling target apart from general.
+PHOTOMETRIC_REFERENCE_MEAN = 100.0
+PHOTOMETRIC_REFERENCE_STD = 50.0
+ENABLE_PHOTOMETRIC_NORMALIZATION = True  # set via --disable-photometric-norm
+
+
+def normalize_photometrics(img_bgr, target_mean=PHOTOMETRIC_REFERENCE_MEAN,
+                           target_std=PHOTOMETRIC_REFERENCE_STD):
+    """
+    Matches an image's overall luminance mean/std to a fixed reference,
+    applied uniformly across all 3 channels (derived from grayscale stats,
+    so hue/color balance is preserved while brightness and contrast are
+    normalized). Confirmed via check_direction_confound.py: target images
+    ran ~30% higher contrast than the general population on average, and
+    that contrast difference leaked substantially into the extracted
+    "identity" direction (corr=+0.38). This strips that axis out at the
+    input level for BOTH target and general images, rather than trying to
+    out-math it in activation space.
+    """
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    cur_mean, cur_std = float(gray.mean()), float(gray.std())
+    if cur_std < 1e-6:
+        cur_std = 1e-6
+    scale = target_std / cur_std
+    img_f = img_bgr.astype(np.float32)
+    normalized = (img_f - cur_mean) * scale + target_mean
+    return np.clip(normalized, 0, 255).astype(np.uint8)
+
+
 def image_to_vjepa_input(img_bgr):
     """
     img_bgr: raw decoded image (H,W,3) BGR uint8, e.g. from cv2.imdecode.
@@ -140,6 +173,8 @@ def image_to_vjepa_input(img_bgr):
     through TribeModel.predict()), there's no offset/duration constraint to
     satisfy, just vjepa2's own expected clip length.
     """
+    if ENABLE_PHOTOMETRIC_NORMALIZATION:
+        img_bgr = normalize_photometrics(img_bgr)
     img = cv2.resize(img_bgr, (IMG_SIZE, IMG_SIZE))
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img_t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0  # (3,H,W)
@@ -460,9 +495,19 @@ def main():
     parser.add_argument("--source-model-name", default="facebook/vjepa2-vitg-fpc64-256",
                         help="Original HF model id, used to save the (unmodified) video "
                              "processor config alongside your abliterated weights.")
+    parser.add_argument("--disable-photometric-norm", action="store_true",
+                        help="Skip luminance/contrast normalization. NOT recommended -- "
+                             "check_direction_confound.py found the target image set ran "
+                             "~30% higher contrast than the general population, and that "
+                             "leaked substantially into the extracted direction. Kept as "
+                             "an option for direct before/after comparison.")
     args = parser.parse_args()
 
     random.seed(args.seed)
+
+    global ENABLE_PHOTOMETRIC_NORMALIZATION
+    ENABLE_PHOTOMETRIC_NORMALIZATION = not args.disable_photometric_norm
+    print(f"Photometric normalization: {'ENABLED' if ENABLE_PHOTOMETRIC_NORMALIZATION else 'DISABLED'}")
 
     print("="*60)
     print("PHASE 0 -- Face mask construction")
@@ -508,7 +553,7 @@ def main():
     print("="*60)
     dirs_by_layer = {}
     n_target = len(target_samples)
-    activation_cache_dir = OUT_DIR / "raw_activations"
+    activation_cache_dir = OUT_DIR / f"raw_activations_{'norm' if ENABLE_PHOTOMETRIC_NORMALIZATION else 'unnorm'}"
 
     for layer_idx in target_layers:
         print(f"\nCollecting activations at L{layer_idx}...")
