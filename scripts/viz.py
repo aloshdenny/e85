@@ -17,10 +17,13 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from chunk_utils import discover_npz, load_npz
+
 # ── Paths ──────────────────────────────────────────────────────────────────────
 # Predictions (input):
 #   fairface_preds/{category}.npz  -- 126 age_gender_race buckets
-#   target_preds/*.npz             -- one or more chunks for the target person
+#     (or {category}_chunk_NNN.npz if >100MB)
+#   target_preds/*.npz             -- one or more files for the target person
 # Outputs:
 #   fairface_study/  -- fairface masks + full-fsaverage PNGs
 #   target_study/    -- target mask + full-fsaverage PNG
@@ -60,13 +63,13 @@ def category_key(age, gender, race):
 # ── Discover + load native (fsaverage5) means ────────────────────────────────
 
 def discover_categories():
-    return sorted(p.stem for p in PRED_ROOT.glob("*.npz"))
+    return sorted(p.stem for p in discover_npz(PRED_ROOT))
 
 CATEGORIES = discover_categories()
 print(f"Discovered {len(CATEGORIES)} fairface categories")
 
 def load_category_mean(path):
-    d = np.load(path)
+    d = load_npz(path)
     preds = d["preds"]  # (N_images, 20484)
     return preds.mean(axis=0)
 
@@ -74,10 +77,10 @@ print("Loading fairface category means (native fsaverage5)...")
 FAIRFACE_MEANS = {cat: load_category_mean(PRED_ROOT / f"{cat}.npz") for cat in CATEGORIES}
 
 print("Loading target mean (native fsaverage5)...")
-target_files = sorted(TARGET_PRED_ROOT.glob("*.npz"))
+target_files = discover_npz(TARGET_PRED_ROOT, recursive=True)
 if not target_files:
     raise FileNotFoundError(f"No .npz files found in {TARGET_PRED_ROOT}")
-target_preds_list = [np.load(p)["preds"] for p in target_files]
+target_preds_list = [load_npz(p)["preds"] for p in target_files]
 TARGET_MEAN = np.concatenate(target_preds_list, axis=0).mean(axis=0)
 print(f"  target: {len(target_files)} file(s), "
       f"{sum(p.shape[0] for p in target_preds_list)} images total")

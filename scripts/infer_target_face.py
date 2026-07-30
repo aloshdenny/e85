@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from tribev2.demo_utils import TribeModel
+from chunk_utils import save_npz, npz_exists
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
@@ -115,7 +116,7 @@ def process_zip(
 ):
     out_file = out_dir / f"{zip_path.stem}.npz"
 
-    if out_file.exists():
+    if npz_exists(out_file):
         print(f"[SKIP] {zip_path.name}")
         return
 
@@ -216,7 +217,7 @@ def process_zip(
 
             vectors = np.stack(vectors)
 
-            np.savez_compressed(
+            saved = save_npz(
                 out_file,
                 preds=vectors,
                 filenames=np.array(filenames),
@@ -224,7 +225,8 @@ def process_zip(
             )
 
             print(
-                f"Saved {vectors.shape} -> {out_file}"
+                f"Saved {vectors.shape} -> {saved[0].name}"
+                f"{f' (+{len(saved)-1} chunks)' if len(saved) > 1 else ''}"
             )
 
     finally:

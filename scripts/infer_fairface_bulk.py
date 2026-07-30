@@ -53,6 +53,7 @@ import cv2
 import pandas as pd
 
 from tribev2.demo_utils import TribeModel
+from chunk_utils import save_npz, npz_exists
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
@@ -177,7 +178,7 @@ def process_fairface_zips(model, zip_path: Path, out_dir: Path, tmp_root: Path,
                           duration: float, fps: int, batch_size: int):
     category = zip_path.stem
     out_path = out_dir / f"{category}.npz"
-    if out_path.exists():
+    if npz_exists(out_path):
         print(f"[SKIP] {category} (already done)")
         return
 
@@ -245,14 +246,15 @@ def process_fairface_zips(model, zip_path: Path, out_dir: Path, tmp_root: Path,
 
         if all_means:
             means_arr = np.stack(all_means, axis=0)
-            np.savez_compressed(
+            saved = save_npz(
                 out_path,
                 preds=means_arr,
                 filenames=np.array(all_names),
                 failed=np.array(failed),
                 age=age, gender=gender, race=race,
             )
-            print(f"[{category}] saved {means_arr.shape} -> {out_path} "
+            print(f"[{category}] saved {means_arr.shape} -> {saved[0].name}"
+                  f"{f' (+{len(saved)-1} chunks)' if len(saved) > 1 else ''} "
                   f"({len(failed)} failed)")
         else:
             print(f"[{category}] no successful predictions -- nothing saved")

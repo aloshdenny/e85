@@ -19,8 +19,12 @@ Usage:
 """
 
 import argparse
+import sys
 import numpy as np
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from chunk_utils import discover_npz, load_npz, npz_exists
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 
@@ -81,12 +85,12 @@ def build_masks(roi_dict, atlas_names, lh_labels, rh_labels):
 
 
 def load_general_mean(general_dir: Path, per_category_average: bool):
-    npz_files = sorted(general_dir.glob("*.npz"))
+    npz_files = discover_npz(general_dir)
     if not npz_files:
         raise FileNotFoundError(f"No .npz files in {general_dir}")
     cat_means = []
     for f in npz_files:
-        data = np.load(f)
+        data = load_npz(f)
         cat_means.append(data["preds"].mean(axis=0))
     if per_category_average:
         # Equal weight per demographic bucket, regardless of image count --
@@ -94,7 +98,7 @@ def load_general_mean(general_dir: Path, per_category_average: bool):
         # buckets dominate the general-population estimate.
         return np.stack(cat_means).mean(axis=0), len(npz_files)
     else:
-        all_preds = np.concatenate([np.load(f)["preds"] for f in npz_files], axis=0)
+        all_preds = np.concatenate([load_npz(f)["preds"] for f in npz_files], axis=0)
         return all_preds.mean(axis=0), len(npz_files)
 
 
@@ -142,16 +146,19 @@ def main():
     print(f"Loading target person from {args.target_npz} ...")
     target_path = Path(args.target_npz)
     if target_path.is_dir():
-        target_files = sorted(target_path.rglob("*.npz"))
-    elif target_path.is_file():
+        target_files = discover_npz(target_path, recursive=True)
+    elif npz_exists(target_path):
         target_files = [target_path]
     else:
-        target_files = sorted(Path(".").rglob(str(args.target_npz)))
+        target_files = [
+            f for f in discover_npz(Path("."), recursive=True)
+            if str(args.target_npz) in str(f)
+        ]
     
     if not target_files:
         raise FileNotFoundError(f"No target .npz files found matching {args.target_npz}")
 
-    target_preds_list = [np.load(f)["preds"] for f in target_files]
+    target_preds_list = [load_npz(f)["preds"] for f in target_files]
     target_preds_cat = np.concatenate(target_preds_list, axis=0)
     target_mean = target_preds_cat.mean(axis=0)
     print(f"  Loaded {target_preds_cat.shape[0]} target images across {len(target_files)} file(s)")

@@ -62,6 +62,7 @@ import cv2
 import torch
 from torchvision import transforms
 from tribev2.demo_utils import TribeModel
+from chunk_utils import discover_npz, load_npz
 
 # ── ROI definitions (Destrieux exact labels) ─────────────────────────────────
 
@@ -192,7 +193,7 @@ def sample_general_images(general_preds_dir: Path, general_zips_dir: Path,
     sampled across category buckets so no single demographic bucket dominates.
     """
     rng = random.Random(seed)
-    npz_files = sorted(general_preds_dir.glob("*.npz"))
+    npz_files = discover_npz(general_preds_dir)
     if not npz_files:
         raise FileNotFoundError(f"No npz files in {general_preds_dir}")
 
@@ -205,7 +206,7 @@ def sample_general_images(general_preds_dir: Path, general_zips_dir: Path,
         if not zip_path.exists():
             print(f"  [WARN] no matching zip for {npz_path.stem}, skipping")
             continue
-        data = np.load(npz_path)
+        data = load_npz(npz_path)
         preds = data["preds"]
         filenames = data["filenames"]
         n = len(filenames)
@@ -226,7 +227,7 @@ def sample_general_images(general_preds_dir: Path, general_zips_dir: Path,
 
 
 def load_target_images(target_preds_npz: Path, target_zip: Path, mask: np.ndarray):
-    data = np.load(target_preds_npz)
+    data = load_npz(target_preds_npz)
     preds = data["preds"]
     filenames = data["filenames"]
     samples = []
