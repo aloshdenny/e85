@@ -63,14 +63,6 @@ import torch
 from torchvision import transforms
 from tribev2.demo_utils import TribeModel
 
-try:
-    sys.path.append(str(Path(__file__).parent))
-    import chunk_utils
-    HAVE_CHUNK_UTILS = True
-except ImportError:
-    HAVE_CHUNK_UTILS = False
-    print("[WARN] chunk_utils not found -- will save with plain torch.save instead.")
-
 # ── ROI definitions (Destrieux exact labels) ─────────────────────────────────
 
 PRIMARY_FACE_ROIS = {
@@ -580,9 +572,6 @@ def main():
     print("="*60)
     apply_surgery(encoder_blocks, dirs_by_layer, args.tolerance)
 
-    tag = f"t{args.tolerance}_c{args.n_components}_L{len(target_layers)}"
-    out_name = f"vjepa2_face_abliterated_{tag}.pt"
-
     # HF-format checkpoint (config.json + weights) -- REQUIRED for validation.
     # TribeModel's video_feature.image extractor reconstructs a fresh vjepa2
     # model internally from model_name on every predict() call (confirmed via
@@ -604,21 +593,6 @@ def main():
     processor.save_pretrained(hf_checkpoint_dir)
     print(f"  Processor config saved -> {hf_checkpoint_dir} "
           f"(this directory is now validation-ready on its own)")
-
-    # NOTE: this raw state_dict backup is NOT what validation.py loads --
-    # validation.py only ever points model_name at hf_checkpoint_dir above.
-    # This is a redundant secondary backup (useful if you want to load the
-    # weights directly into a bare vjepa2 module without going through
-    # AutoModel.from_pretrained/model_name at all, e.g. for a smoke-test-
-    # style direct load). Safe to skip if you don't need that.
-    if HAVE_CHUNK_UTILS:
-        chunk_utils.save_chunked(vjepa2_module.state_dict(), OUT_DIR / out_name)
-        chunk_utils.save_chunked(vjepa2_module.state_dict(), OUT_DIR / "vjepa2_face_abliterated.pt")
-        print(f"  Saved (chunked, raw state_dict backup, UNUSED by validation.py) -> {OUT_DIR / out_name}")
-    else:
-        torch.save(vjepa2_module.state_dict(), OUT_DIR / out_name)
-        torch.save(vjepa2_module.state_dict(), OUT_DIR / "vjepa2_face_abliterated.pt")
-        print(f"  Saved (raw state_dict backup, UNUSED by validation.py) -> {OUT_DIR / out_name}")
 
     surgery_log = {
         "mask_rois": "OFA+FFA+TP+ATL" if args.include_secondary else "OFA+FFA",
