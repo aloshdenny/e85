@@ -1,0 +1,17 @@
+{
+  "mask_rois": "OFA+FFA",
+  "n_mask_verts": 776,
+  "tolerance": -1.0,
+  "n_components": 3,
+  "n_layers": 6,
+  "layers_operated": [
+    6,
+    7,
+    36,
+    37,
+    38,
+    39
+  ],
+  "n_target_images": 175,
+  "n_general_images": 2898
+}
