@@ -44,7 +44,7 @@ DATA LAYOUT ASSUMPTIONS (adjust via CLI flags if yours differs):
                          with filenames matching target-preds-npz's 'filenames'
 
 Usage:
-  python scripts/abliteration.py \
+  python abliteration.py \
       --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
       --target-preds-npz ./target_preds/mia.npz --target-zip ./target/mia.zip \
       --tolerance -1.0 --n_components 3 --n_layers 5
@@ -481,7 +481,7 @@ def main():
     parser.add_argument("--include-secondary", action="store_true",
                         help="Include TP+ATL in the face mask (small positive margin "
                              "per the diagnostic, excluded by default).")
-    parser.add_argument("--general-sample-size", type=int, default=3000,
+    parser.add_argument("--general-sample-size", type=int, default=2000,
                         help="Total general-population images to sample for activation "
                              "collection (spread across category buckets).")
     parser.add_argument("--seed", type=int, default=0)
@@ -495,6 +495,11 @@ def main():
     parser.add_argument("--source-model-name", default="facebook/vjepa2-vitg-fpc64-256",
                         help="Original HF model id, used to save the (unmodified) video "
                              "processor config alongside your abliterated weights.")
+    parser.add_argument("--max-shard-size", default="20MB",
+                        help="Shards the saved HF checkpoint below this size (git-friendly, "
+                             "e.g. GitHub's ~25MB soft limit). AutoModel.from_pretrained() "
+                             "reassembles sharded checkpoints transparently on load -- this "
+                             "does not require any change to validation.py's loading logic.")
     parser.add_argument("--disable-photometric-norm", action="store_true",
                         help="Skip luminance/contrast normalization. NOT recommended -- "
                              "check_direction_confound.py found the target image set ran "
@@ -585,9 +590,13 @@ def main():
     # raw state_dict alone can't be loaded via that path, since the extractor
     # calls AutoModel.from_pretrained(model_name), not load_state_dict().
     hf_checkpoint_dir = OUT_DIR / "vjepa2_hf_checkpoint"
-    vjepa2_module.save_pretrained(hf_checkpoint_dir)
-    print(f"\n  HF-format checkpoint (for validation.py's model_name redirect) "
-          f"-> {hf_checkpoint_dir}")
+    vjepa2_module.save_pretrained(hf_checkpoint_dir, max_shard_size=args.max_shard_size)
+    print(f"\n  HF-format checkpoint (sharded, max_shard_size={args.max_shard_size}) "
+          f"for validation.py's model_name redirect -> {hf_checkpoint_dir}")
+    shard_files = sorted(hf_checkpoint_dir.glob("model*.safetensors"))
+    print(f"  {len(shard_files)} shard file(s):")
+    for f in shard_files:
+        print(f"    {f.name}: {f.stat().st_size/1e6:.2f} MB")
 
     print(f"  Saving (unmodified) video processor config alongside it...")
     from transformers import AutoVideoProcessor
@@ -596,14 +605,20 @@ def main():
     print(f"  Processor config saved -> {hf_checkpoint_dir} "
           f"(this directory is now validation-ready on its own)")
 
+    # NOTE: this raw state_dict backup is NOT what validation.py loads --
+    # validation.py only ever points model_name at hf_checkpoint_dir above.
+    # This is a redundant secondary backup (useful if you want to load the
+    # weights directly into a bare vjepa2 module without going through
+    # AutoModel.from_pretrained/model_name at all, e.g. for a smoke-test-
+    # style direct load). Safe to skip if you don't need that.
     if HAVE_CHUNK_UTILS:
         chunk_utils.save_chunked(vjepa2_module.state_dict(), OUT_DIR / out_name)
         chunk_utils.save_chunked(vjepa2_module.state_dict(), OUT_DIR / "vjepa2_face_abliterated.pt")
-        print(f"  Saved (chunked, raw state_dict) -> {OUT_DIR / out_name}")
+        print(f"  Saved (chunked, raw state_dict backup, UNUSED by validation.py) -> {OUT_DIR / out_name}")
     else:
         torch.save(vjepa2_module.state_dict(), OUT_DIR / out_name)
         torch.save(vjepa2_module.state_dict(), OUT_DIR / "vjepa2_face_abliterated.pt")
-        print(f"  Saved (raw state_dict) -> {OUT_DIR / out_name}")
+        print(f"  Saved (raw state_dict backup, UNUSED by validation.py) -> {OUT_DIR / out_name}")
 
     surgery_log = {
         "mask_rois": "OFA+FFA+TP+ATL" if args.include_secondary else "OFA+FFA",
