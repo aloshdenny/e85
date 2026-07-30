@@ -1,0 +1,65 @@
+Face ROIs retained: ['OFA', 'FFA', 'STS', 'ATL', 'TP', 'PREC', 'MPFC', 'PCC']
+Non-face ROIs retained: ['V1', 'V2', 'V4', 'MT', 'LO', 'A1', 'STG', 'PPA', 'MTG', 'ITG', 'PT', 'S1', 'SPL', 'IPL', 'TPJ', 'MPC', 'M1', 'PMC', 'DLPFC', 'IFG', 'OFC', 'ACC', 'FPC', 'INS']
+
+Loading general population from fairface_preds ...
+  126 category buckets, general_mean shape=(20484,)
+Loading target person from target_preds/mia.npz ...
+  175 target images
+
+======================================================================
+ROI      face?   mean contrast  mean |contrast|  n_verts
+----------------------------------------------------------------------
+OFA      FACE         +0.02500          0.02502      553
+V4                    +0.01518          0.01809      748
+FFA      FACE         +0.01396          0.01417      223
+MT                    +0.01269          0.01295      341
+SPL                   +0.00700          0.00848     1026
+LO                    +0.00643          0.00887      598
+ITG                   +0.00636          0.00755      607
+PCC      FACE         -0.00631          0.00696      463
+ACC                   -0.00428          0.00514      919
+TPJ                   -0.00413          0.00534      346
+PPA                   +0.00400          0.00584      437
+PT                    -0.00360          0.00445      287
+TP       FACE         +0.00341          0.00401      222
+DLPFC                 -0.00335          0.00482     1132
+INS                   -0.00277          0.00430      931
+PREC     FACE         -0.00268          0.00477      683
+PMC                   -0.00263          0.00421     1284
+V1                    -0.00255          0.00912      375
+ATL      FACE         +0.00234          0.00453      572
+V2                    -0.00234          0.01352      605
+MPC                   -0.00211          0.00495      272
+OFC                   +0.00181          0.00345      813
+S1                    +0.00168          0.00590      931
+MTG                   +0.00129          0.00399      514
+M1                    -0.00128          0.00460      958
+A1                    -0.00105          0.00281       85
+STS      FACE         +0.00094          0.00494     1048
+IPL                   -0.00064          0.00418      954
+MPFC     FACE         +0.00042          0.00396      227
+IFG                   +0.00029          0.00381      685
+FPC                   -0.00014          0.00391      198
+STG                   +0.00011          0.00433     1490
+
+======================================================================
+MARGIN CHECK
+======================================================================
+Face ROI contrast values:     min=-0.00631  max=+0.02500  mean=+0.00464
+Non-face ROI contrast values: min=-0.00428  max=+0.01518  mean=+0.00108
+
+Strict margin (weakest face ROI - strongest non-face ROI): -0.02149
+Mean margin   (avg face ROI - avg non-face ROI):            +0.00356
+>> Face ROIs are stronger on average, but overlap with some non-face ROIs.
+
+======================================================================
+ENERGY CONCENTRATION (sum of squared contrast values)
+======================================================================
+Face ROIs:           37.9%  (3991 verts)
+Non-face ROIs (30):  81.9%  (16536 verts)
+Rest of cortex:       5.1%  (2846 verts)
+
+If effect were uniform across cortex, face ROIs (3991 of 20484 verts) would hold 19.5% of energy.
+Actual: 37.9%  (concentrated)
+
+Of the top 5.0% strongest-contrast vertices (1025 verts), 490 (47.8%) fall inside face ROIs.
