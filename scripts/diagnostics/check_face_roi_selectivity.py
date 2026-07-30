@@ -15,7 +15,7 @@ Inputs expected (from infer_face_bulk.py output format -- .npz with a
   --target-npz    target .npz file or directory (default: ./target_preds)
 
 Usage:
-  python scripts/check_face_roi_selectivity.py
+  python scripts/diagnostics/check_face_roi_selectivity.py
 """
 
 import argparse

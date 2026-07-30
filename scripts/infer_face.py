@@ -25,7 +25,7 @@ Usage:
     python scripts/infer_face.py --image /path/to/face.jpg --out ./face_outputs/face_0001
     python scripts/infer_face.py --image /path/to/face.jpg --out ./face_outputs/face_0001 --duration 3 --fps 5
 
-Batch usage (called from a driver script iterating over FairFace + target set):
+Batch usage (called from a driver script iterating over baseline dataset + target set):
     from scripts.infer_face import run_single_image
     pred_vector = run_single_image(image_path, out_dir, model=model)
 """

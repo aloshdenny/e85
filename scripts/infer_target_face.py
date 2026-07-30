@@ -1,3 +1,7 @@
+"""
+python scripts/infer_target_face.py
+"""
+
 import os
 import sys
 import shutil

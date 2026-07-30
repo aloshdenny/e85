@@ -28,7 +28,7 @@ Requires face_abliteration.py's activation cache to already exist
 face_abliteration.py first if it doesn't.
 
 Usage:
-  python check_direction_confound.py \
+  python scripts/diagnostics/check_direction_confound.py \
       --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
       --target-preds-npz ./target_preds/mia.npz --target-zip ./target/mia.zip \
       --layer 6 --general-sample-size 3000 --seed 0
@@ -41,9 +41,13 @@ from pathlib import Path
 import numpy as np
 import cv2
 
-sys.path.append(str(Path(__file__).parent))
-from face_abliteration import (
-    load_target_images, sample_general_images, build_face_mask, OUT_DIR,
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from abliteration import (
+    load_target_images,
+    sample_general_images,
+    build_face_mask,
+    OUT_DIR,
 )
 
 
