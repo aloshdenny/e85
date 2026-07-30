@@ -82,7 +82,7 @@ SECONDARY_FACE_ROIS = {
     "ATL": ["G_temporal_inf", "G_oc-temp_med-Parahip"],
 }
 
-OUT_DIR = Path("./abliterated_face")
+OUT_DIR = Path("./abliterated")
 OUT_DIR.mkdir(exist_ok=True)
 MASK_DIR = OUT_DIR / "masks"
 MASK_DIR.mkdir(exist_ok=True)
