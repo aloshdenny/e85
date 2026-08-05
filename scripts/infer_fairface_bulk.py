@@ -30,7 +30,7 @@ Usage:
   python infer_fairface_bulk.py --probe-batch 2
 
   # Full run
-  python infer_fairface_bulk.py --zips-dir ./fairface --out-dir ./fairface_preds --batch-size 64
+  python scripts/infer_fairface_bulk.py --zips-dir ./fairface --out-dir ./fairface_preds --batch-size 64
 """
 
 import os
