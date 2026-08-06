@@ -35,7 +35,7 @@ THREE CONFIRMED FIXES COMBINED HERE, after a long debugging chain:
 
 Usage:
   python scripts/validation.py --val-dir ./val --target-prefix mia \
-      --hf-checkpoint-dir ./abliterated/vjepa2_hf_checkpoint
+      --hf-checkpoint-dir ./abliterated/fairface/vjepa2_hf_checkpoint
 """
 
 import os, sys, warnings, logging, argparse, tempfile, shutil
