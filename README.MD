@@ -73,9 +73,8 @@ abliterated/            # outputs of abliteration.py
 
 Rebuild the merged image zip from its chunks:
 ```python
-from scripts.chunk_utils import fuse_chunks_to_file
-fuse_chunks_to_file("fairface + ffhq/fairface + ffhq.zip",
-                    "fairface + ffhq/fairface + ffhq.zip")
+from scripts.chunk_utils import ensure_fused_zip
+ensure_fused_zip("fairface + ffhq/fairface + ffhq.zip")
 ```
 
 ---
@@ -104,10 +103,14 @@ python scripts/diagnostics/crop_faces.py
 ```
 Zip cropped faces under `./target/` before running target inference.
 
-### 1a. FairFace Baseline Inference
-Bulk TribeV2 inference over all FairFace category zips in `./fairface/`. Batched for GPU throughput. Writes per-category `.npz` (auto-chunked if over GitHub’s 100MB limit) to `./fairface_preds/`.
+### 1a. FairFace / Merged-Zip Baseline Inference
+Bulk TribeV2 inference over the merged image zip (default) or a directory of category zips. Writes **one `.npz` per image** (`preds` shape `(20484,)`, key `filename`) so the output matches the shipped `fairface + ffhq preds/` layout. Already-done images are skipped.
 ```bash
-python scripts/infer_fairface_bulk.py
+# Default: fused/merged zip -> ./fairface + ffhq preds
+python scripts/infer_fairface_bulk.py --batch-size 64
+
+# Legacy multi-category FairFace dump (still per-image npzs):
+python scripts/infer_fairface_bulk.py --zips-dir ./fairface --out-dir ./fairface_preds
 ```
 
 ### 1b. FFHQ Baseline Inference
@@ -149,20 +152,18 @@ It also drops the raw signed contrast vector (native fsaverage5, shape `(20484,)
 
 ### 4. Identity Abliteration (Surgery)
 Builds a cortical face mask (OFA+FFA by default; add `--include-secondary` for TP+ATL), collects per-layer vjepa2 activations from static repeated frames, computes PCA directions, applies surgical weight suppression, and exports an HF-format checkpoint for validation.
+
+Defaults to the merged FairFace+FFHQ layout (`--general-preds-dir` / `--general-zip`). Chunked image zips are fused automatically.
 ```bash
 python scripts/abliteration.py \
-  --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
   --target-preds-npz ./target_preds/mia.npz --target-zip ./target/mia.zip \
   --tolerance -1.0 --n_components 3 --n_layers 5
 
 # Include secondary face ROIs (TP + ATL)
 python scripts/abliteration.py \
-  --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
   --target-preds-npz ./target_preds/mia.npz --target-zip ./target/mia.zip \
   --tolerance -1.0 --n_components 3 --n_layers 5 --include-secondary
 ```
-
-> **Layout caveat**: `abliteration.py` still expects the old per-bucket layout, a folder of category npz each holding `preds` (N, 20484) + `filenames` (N,) alongside a same-stem zip. It has not been ported to the flat merged per-image set yet, so regenerate `./fairface/` and `./fairface_preds/` (step 1a) before running surgery.
 
 ### 5. Validation
 Redirects TribeV2’s image extractor to the local HF checkpoint, clears cache pitfalls with distinct pass-2 events, and compares mask-averaged brain response before vs. after surgery on `./val/` holdouts (target prefix vs. general faces).
@@ -172,7 +173,7 @@ python scripts/validation.py --val-dir ./val --target-prefix mia \
 ```
 
 ### 6. Visualization
-Interactive brain-scan HTML (`interactive_study/combined_interactive.html`) with FairFace slider and target-vs-baseline toggle, plus per-category PNG maps under `fairface_study/` / `target_study/`.
+Interactive brain-scan HTML (`interactive_study/combined_interactive.html`) with a target-vs-general toggle, plus sagittal PNG maps under `fairface_study/` / `target_study/`. Uses the merged per-image preds (streaming mean), not demographic category buckets.
 ```bash
 python scripts/viz.py
 ```
