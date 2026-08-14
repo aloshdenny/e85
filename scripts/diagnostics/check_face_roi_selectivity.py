@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from chunk_utils import discover_npz, load_npz, npz_exists
+from chunk_utils import discover_npz, load_npz, npz_exists, preds_as_image_vectors
 
 GENERAL_DIR = Path("./fairface + ffhq preds")
 TARGET_NPZ = Path("./target_preds")
@@ -84,25 +84,6 @@ def build_masks(roi_dict, atlas_names, lh_labels, rh_labels):
     return masks
 
 
-def _preds_as_image_vectors(preds: np.ndarray) -> np.ndarray:
-    """
-    Normalize preds to shape (N_images, 20484).
-
-    Flat per-image format (FairFace+FFHQ merge, FFHQ bulk): (20484,)
-    Legacy category format: (N, 20484)
-
-    Calling .mean(axis=0) on a 1D vector collapses VERTICES -- never do that.
-    """
-    preds = np.asarray(preds)
-    if preds.ndim == 1:
-        if preds.shape[0] != 20484:
-            raise ValueError(f"unexpected 1D preds shape {preds.shape}")
-        return preds.reshape(1, -1)
-    if preds.ndim == 2 and preds.shape[1] == 20484:
-        return preds
-    raise ValueError(f"unexpected preds shape {preds.shape}")
-
-
 def load_general_mean(general_dir: Path) -> tuple[np.ndarray, int]:
     """
     Running mean over all general-population images.
@@ -114,7 +95,7 @@ def load_general_mean(general_dir: Path) -> tuple[np.ndarray, int]:
     if not npz_files:
         raise FileNotFoundError(f"No .npz files in {general_dir}")
 
-    first = _preds_as_image_vectors(load_npz(npz_files[0])["preds"])
+    first = preds_as_image_vectors(load_npz(npz_files[0])["preds"])
     print(
         f"  Detected npz format: "
         f"{'single-image (1D preds)' if first.shape[0] == 1 and len(npz_files) > 1 else 'per-file preds'} "
@@ -124,7 +105,7 @@ def load_general_mean(general_dir: Path) -> tuple[np.ndarray, int]:
     acc = np.zeros(20484, dtype=np.float64)
     n_images = 0
     for f in npz_files:
-        vecs = _preds_as_image_vectors(load_npz(f)["preds"])
+        vecs = preds_as_image_vectors(load_npz(f)["preds"])
         acc += vecs.sum(axis=0)
         n_images += vecs.shape[0]
 
@@ -154,7 +135,7 @@ def load_target_mean(target_npz: Path) -> tuple[np.ndarray, int]:
     acc = np.zeros(20484, dtype=np.float64)
     n_images = 0
     for f in target_files:
-        vecs = _preds_as_image_vectors(load_npz(f)["preds"])
+        vecs = preds_as_image_vectors(load_npz(f)["preds"])
         acc += vecs.sum(axis=0)
         n_images += vecs.shape[0]
 

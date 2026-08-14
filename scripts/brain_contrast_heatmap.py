@@ -48,7 +48,7 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.collections import PolyCollection
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from chunk_utils import discover_npz, load_npz
+from chunk_utils import discover_npz, load_npz, preds_as_image_vectors
 
 N_LH5 = 10242  # fsaverage5 vertices per hemisphere
 
@@ -74,18 +74,6 @@ SECONDARY_FACE_ROIS = {
 }
 
 
-def _preds_as_image_vectors(preds: np.ndarray) -> np.ndarray:
-    """Normalize preds to (N_images, 20484). Never mean 1D across vertices."""
-    preds = np.asarray(preds)
-    if preds.ndim == 1:
-        if preds.shape[0] != 20484:
-            raise ValueError(f"unexpected 1D preds shape {preds.shape}")
-        return preds.reshape(1, -1)
-    if preds.ndim == 2 and preds.shape[1] == 20484:
-        return preds
-    raise ValueError(f"unexpected preds shape {preds.shape}")
-
-
 def load_group_mean(preds_dir: Path, recursive=False):
     """
     Running mean over all .npz files in a directory.
@@ -98,7 +86,7 @@ def load_group_mean(preds_dir: Path, recursive=False):
     if not files:
         raise FileNotFoundError(f"No .npz files found in {preds_dir}")
 
-    first = _preds_as_image_vectors(load_npz(files[0])["preds"])
+    first = preds_as_image_vectors(load_npz(files[0])["preds"])
     print(
         f"  Detected format: "
         f"{'single-image (1D preds)' if first.shape[0] == 1 else 'multi-image (2D preds)'} "
@@ -108,7 +96,7 @@ def load_group_mean(preds_dir: Path, recursive=False):
     acc = np.zeros(20484, dtype=np.float64)
     n_images = 0
     for f in files:
-        vecs = _preds_as_image_vectors(load_npz(f)["preds"])
+        vecs = preds_as_image_vectors(load_npz(f)["preds"])
         acc += vecs.sum(axis=0)
         n_images += vecs.shape[0]
 
