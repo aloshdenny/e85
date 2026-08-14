@@ -1,1 +1,12 @@
 .DS_Store
+__pycache__/
+
+# Raw per-source dumps. Superseded by the merged fairface + ffhq set,
+# which is what every script defaults to now.
+fairface/
+fairface_preds/
+ffhq/
+ffhq_preds/
+
+# Fused locally, pushed as chunk_NNN parts.
+fairface + ffhq/fairface + ffhq.zip
