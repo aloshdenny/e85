@@ -40,7 +40,7 @@ Usage:
   python infer_ffhq_bulk.py --probe-batch 2
 
   # Full run
-  python scripts/infer_ffhq_bulk.py --images-dir /path/to/ffhq70k-256 --out-dir ./ffhq_preds \
+  python scripts/infer_ffhq_bulk.py --images-dir ./ffhq --out-dir ./ffhq_preds \
       --batch-size 64
 """
 
@@ -69,8 +69,8 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 
-IMAGES_DIR = Path("./ffhq70k-256")   # flat folder of FFHQ images
-OUT_DIR    = Path("./ffhq_preds")    # output directory for sharded .npz files
+IMAGES_DIR = Path("./ffhq")          # flat folder of FFHQ images
+OUT_DIR    = Path("./ffhq_preds")    # one .npz per image (preds + filename)
 CACHE_DIR  = Path("./cache")
 
 

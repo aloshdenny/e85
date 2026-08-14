@@ -22,14 +22,14 @@ import numpy as np
 import pandas as pd
 
 from tribev2.demo_utils import TribeModel
-from chunk_utils import save_npz, npz_exists
+from chunk_utils import save_npz, npz_exists, ensure_fused_zip, resolve_zip_member
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 
 TARGET_DIR   = Path("./target")        # target image zips, discovered recursively (/**/*.zip)
-OUT_DIR      = Path("./target_preds")  # output directory for per-zip .npz files
+OUT_DIR      = Path("./target_preds")  # multi-image .npz per zip (preds + filenames)
 CACHE_DIR    = Path("./cache")
 
 
@@ -41,7 +41,8 @@ def get_tmp_root():
 
 
 def decode_image_from_zip(zf, name):
-    data = zf.read(name)
+    member = resolve_zip_member(zf, name)
+    data = zf.read(member)
     arr = np.frombuffer(data, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
@@ -134,7 +135,7 @@ def process_zip(
     failed = []
 
     try:
-        with zipfile.ZipFile(zip_path) as zf:
+        with zipfile.ZipFile(ensure_fused_zip(zip_path)) as zf:
 
             members = [
                 m

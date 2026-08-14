@@ -1,36 +1,24 @@
 """
 infer_fairface_bulk.py
 
-Bulk TribeV2 inference over FairFace category zips (fairface/*.zip),
-batched for GPU throughput on a 24GB card.
+Bulk TribeV2 inference over a general-population face zip (or a directory of
+category zips), batched for GPU throughput.
 
-Confirmed via --probe-batch:
-  - model.predict() accepts multiple "Video" rows in one events dataframe.
-  - Returned Segment list preserves row order and tags each timestep with
-    that row's `timeline` value (e.g. 10 Segments per row for a 10s clip
-    at 1Hz, all sharing that row's timeline string).
-  - So: batch B images per predict() call, one row per image with a unique
-    timeline id, then group the returned preds by segment.timeline and mean
-    within each group to get one vector per image.
+Output format matches the merged FairFace+FFHQ layout used by the rest of the
+pipeline: ONE .npz PER IMAGE with
+  preds      shape (20484,)
+  filename   zip member name (str)
 
-Speed profile vs. the original video pipeline:
-  - Images decoded straight from zip bytes (cv2.imdecode) -- never hit disk.
-  - No whisperx/audio parsing.
-  - No PlotBrain rendering -- this pass only produces pred_mean vectors for
-    the difference-in-means step.
-  - One predict() call per batch of --batch-size images instead of per image
-    -- the GPU forward pass is now the dominant cost, not Python/IO overhead.
-  - Synthetic clips are written to /dev/shm when available (RAM), else system
-    temp; the whole temp dir for a category is deleted once that category
-    finishes.
+Defaults point at the merged zip / preds tree. Pass --zips-dir to run the
+legacy multi-category FairFace dump instead (still writes per-image npzs).
 
 Usage:
-  # Confirm your setup is behaving before running the full 97k images:
-  python infer_fairface_bulk.py --probe 3
-  python infer_fairface_bulk.py --probe-batch 2
+  python scripts/infer_fairface_bulk.py --probe 3
+  python scripts/infer_fairface_bulk.py --probe-batch 2
+  python scripts/infer_fairface_bulk.py --batch-size 64
 
-  # Full run
-  python scripts/infer_fairface_bulk.py --zips-dir ./fairface --out-dir ./fairface_preds --batch-size 64
+  # Legacy category-zip dump:
+  python scripts/infer_fairface_bulk.py --zips-dir ./fairface --out-dir ./fairface_preds
 """
 
 import os
@@ -53,18 +41,16 @@ import cv2
 import pandas as pd
 
 from tribev2.demo_utils import TribeModel
-from chunk_utils import save_npz, npz_exists
+from chunk_utils import save_npz, npz_exists, ensure_fused_zip, resolve_zip_member
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 
-ZIPS_DIR  = Path("./fairface")        # FairFace category zip files
-OUT_DIR   = Path("./fairface_preds")  # output directory for per-category .npz files
+ZIP_PATH  = Path("./fairface + ffhq/fairface + ffhq.zip")
+OUT_DIR   = Path("./fairface + ffhq preds")
 CACHE_DIR = Path("./cache")
 
-
-# ── Temp root: prefer RAM-backed /dev/shm if available ───────────────────────
 
 def get_tmp_root():
     shm = Path("/dev/shm")
@@ -73,28 +59,15 @@ def get_tmp_root():
     return Path(tempfile.gettempdir())
 
 
-# ── Category name -> (age, gender, race) ─────────────────────────────────────
-
-def parse_category(name):
-    parts = name.split("_")
-    age = parts[0]
-    gender = parts[1]
-    race = "_".join(parts[2:])
-    return age, gender, race
-
-
-# ── In-memory image decode ────────────────────────────────────────────────────
-
 def decode_image_from_zip(zf: zipfile.ZipFile, name: str):
-    data = zf.read(name)          # bytes, never touches disk
+    member = resolve_zip_member(zf, name)
+    data = zf.read(member)
     arr = np.frombuffer(data, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError(f"Failed to decode image: {name}")
     return img
 
-
-# ── Write a short static clip for one image ───────────────────────────────────
 
 def write_static_clip(img, out_path: Path, duration: float, fps: int):
     h, w = img.shape[:2]
@@ -107,9 +80,6 @@ def write_static_clip(img, out_path: Path, duration: float, fps: int):
 
 
 def make_multi_row_df(rows, duration: float) -> pd.DataFrame:
-    """
-    rows: list of (clip_path, timeline_id)
-    """
     records = []
     for clip_path, timeline_id in rows:
         records.append({
@@ -131,18 +101,19 @@ def make_multi_row_df(rows, duration: float) -> pd.DataFrame:
 
 
 def group_preds_by_timeline(preds, segments):
-    """
-    Group preds rows by segments[i].timeline, preserving first-seen order.
-    Returns dict: timeline_id -> mean pred vector (n_rois,)
-    """
     groups = defaultdict(list)
     for i, seg in enumerate(segments):
         groups[seg.timeline].append(preds[i])
-
     return {tl: np.mean(np.stack(vecs, axis=0), axis=0) for tl, vecs in groups.items()}
 
 
-# ── Diagnostics (kept from earlier probing) ──────────────────────────────────
+def member_out_stem(member: str) -> str:
+    """Stable per-image npz stem from a zip member path."""
+    p = Path(member)
+    if len(p.parts) == 1:
+        return p.stem
+    return "_".join(p.with_suffix("").parts)
+
 
 def probe_batch_row_identity(model, tmp_dir: Path, duration: float, fps: int, n_images: int = 2):
     rows = []
@@ -161,7 +132,7 @@ def probe_batch_row_identity(model, tmp_dir: Path, duration: float, fps: int, n_
 
 
 def probe_single_images(model, zf: zipfile.ZipFile, members, tmp_dir: Path,
-                         duration: float, fps: int, n: int):
+                        duration: float, fps: int, n: int):
     for idx, name in enumerate(members[:n]):
         img = decode_image_from_zip(zf, name)
         clip_path = tmp_dir / f"probe_{idx}.mp4"
@@ -172,37 +143,31 @@ def probe_single_images(model, zf: zipfile.ZipFile, members, tmp_dir: Path,
               f"segments sample={segments[:1] if len(segments) else segments}")
 
 
-# ── Batched category processing ───────────────────────────────────────────────
-
-def process_fairface_zips(model, zip_path: Path, out_dir: Path, tmp_root: Path,
-                          duration: float, fps: int, batch_size: int):
-    category = zip_path.stem
-    out_path = out_dir / f"{category}.npz"
-    if npz_exists(out_path):
-        print(f"[SKIP] {category} (already done)")
-        return
-
-    age, gender, race = parse_category(category)
-
-    tmp_dir = Path(tempfile.mkdtemp(prefix=f"tribe_{category}_", dir=tmp_root))
-    print(f"[{category}] temp dir: {tmp_dir}")
-
-    all_names = []
-    all_means = []
-    failed = []
+def process_zip(model, zip_path: Path, out_dir: Path, tmp_root: Path,
+                duration: float, fps: int, batch_size: int):
+    """
+    One .npz per zip member. Already-done images are skipped via npz_exists.
+    Returns (n_processed, n_skipped, n_failed).
+    """
+    zip_path = ensure_fused_zip(zip_path)
+    tmp_dir = Path(tempfile.mkdtemp(prefix=f"tribe_{zip_path.stem}_", dir=tmp_root))
+    n_processed = n_skipped = n_failed = 0
 
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             members = [n for n in zf.namelist() if Path(n).suffix.lower() in IMAGE_EXTS]
-            print(f"[{category}] {len(members)} images, batch_size={batch_size}")
+            print(f"[{zip_path.name}] {len(members)} images, batch_size={batch_size}")
 
             for batch_start in range(0, len(members), batch_size):
                 batch_members = members[batch_start:batch_start + batch_size]
-
-                rows = []               # (clip_path, timeline_id)
-                timeline_to_name = {}   # timeline_id -> original filename
+                rows = []
+                timeline_to_name = {}
 
                 for i, name in enumerate(batch_members):
+                    out_path = out_dir / f"{member_out_stem(name)}.npz"
+                    if npz_exists(out_path):
+                        n_skipped += 1
+                        continue
                     timeline_id = f"img_{batch_start + i}"
                     try:
                         img = decode_image_from_zip(zf, name)
@@ -212,7 +177,7 @@ def process_fairface_zips(model, zip_path: Path, out_dir: Path, tmp_root: Path,
                         timeline_to_name[timeline_id] = name
                     except Exception as e:
                         print(f"  [ERROR building clip] {name}: {e}")
-                        failed.append(name)
+                        n_failed += 1
 
                 if not rows:
                     continue
@@ -222,73 +187,60 @@ def process_fairface_zips(model, zip_path: Path, out_dir: Path, tmp_root: Path,
                     preds, segments = model.predict(events=df)
                 except Exception as e:
                     print(f"  [ERROR predict()] batch at {batch_start}: {e}")
-                    failed.extend(timeline_to_name.values())
+                    n_failed += len(timeline_to_name)
                     for clip_path, _ in rows:
                         clip_path.unlink(missing_ok=True)
                     continue
 
                 grouped = group_preds_by_timeline(preds, segments)
-
                 for timeline_id, name in timeline_to_name.items():
                     vec = grouped.get(timeline_id)
                     if vec is None:
                         print(f"  [WARN] no prediction returned for {name}")
-                        failed.append(name)
+                        n_failed += 1
                         continue
-                    all_names.append(name)
-                    all_means.append(vec)
+                    out_path = out_dir / f"{member_out_stem(name)}.npz"
+                    # Canonical per-image schema: 1D preds + singular filename
+                    save_npz(out_path, preds=np.asarray(vec, dtype=np.float32),
+                               filename=Path(name).name)
+                    n_processed += 1
 
                 for clip_path, _ in rows:
                     clip_path.unlink(missing_ok=True)
 
                 done = min(batch_start + batch_size, len(members))
-                print(f"  ...{done}/{len(members)}")
-
-        if all_means:
-            means_arr = np.stack(all_means, axis=0)
-            saved = save_npz(
-                out_path,
-                preds=means_arr,
-                filenames=np.array(all_names),
-                failed=np.array(failed),
-                age=age, gender=gender, race=race,
-            )
-            print(f"[{category}] saved {means_arr.shape} -> {saved[0].name}"
-                  f"{f' (+{len(saved)-1} chunks)' if len(saved) > 1 else ''} "
-                  f"({len(failed)} failed)")
-        else:
-            print(f"[{category}] no successful predictions -- nothing saved")
+                print(f"  ...{done}/{len(members)}  "
+                      f"(processed={n_processed} skipped={n_skipped} failed={n_failed})")
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    return n_processed, n_skipped, n_failed
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Batched FairFace -> TribeV2 inference.")
-    parser.add_argument("--zips-dir", default=ZIPS_DIR, type=Path)
+    parser = argparse.ArgumentParser(
+        description="Batched FairFace / merged-zip -> TribeV2 inference "
+                    "(one .npz per image)."
+    )
+    parser.add_argument(
+        "--zip", default=None, type=Path,
+        help=f"Single image zip (default: {ZIP_PATH}). Chunked zips are fused.",
+    )
+    parser.add_argument(
+        "--zips-dir", default=None, type=Path,
+        help="Directory of category .zip files (legacy). Overrides --zip.",
+    )
     parser.add_argument("--out-dir", default=OUT_DIR, type=Path)
     parser.add_argument("--cache-folder", default=CACHE_DIR, type=Path)
     parser.add_argument("--duration", type=float, default=1.0,
-                         help="Synthetic static-clip duration (s). Confirmed floor: "
-                              "1.0s @ fps=2 gives a single clean valid timestep with "
-                              "minimal encode cost. Do not go below this without "
-                              "re-probing -- offset behavior differs from earlier "
-                              "assumption, but very short clips risk 0 frames.")
-    parser.add_argument("--fps", type=int, default=2,
-                         help="Synthetic clip frame rate. Kept low since content is static.")
-    parser.add_argument("--batch-size", type=int, default=64,
-                         help="Images per predict() call. Tune up/down based on VRAM headroom.")
-    parser.add_argument("--probe", type=int, default=0,
-                         help="Run this many single-image predict() calls from the FIRST "
-                              "zip and print shapes. No files saved.")
-    parser.add_argument("--probe-batch", type=int, default=0,
-                         help="Diagnostic: multi-row predict() call with this many dummy "
-                              "images, prints segment structure. No files saved.")
+                        help="Synthetic static-clip duration (s).")
+    parser.add_argument("--fps", type=int, default=2)
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--probe", type=int, default=0)
+    parser.add_argument("--probe-batch", type=int, default=0)
     args = parser.parse_args()
 
-    zips_dir = Path(args.zips_dir)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -308,15 +260,20 @@ def main():
             shutil.rmtree(tmp_dir, ignore_errors=True)
         return
 
-    zip_files = sorted(zips_dir.glob("*.zip"))
-    if not zip_files:
-        print(f"No zips found in {zips_dir}")
-        sys.exit(1)
+    if args.zips_dir is not None:
+        zip_files = sorted(Path(args.zips_dir).glob("*.zip"))
+        if not zip_files:
+            print(f"No zips found in {args.zips_dir}")
+            sys.exit(1)
+    else:
+        zip_path = Path(args.zip) if args.zip is not None else ZIP_PATH
+        zip_files = [zip_path]
 
     if args.probe:
         tmp_dir = Path(tempfile.mkdtemp(prefix="tribe_probe_", dir=tmp_root))
         try:
-            with zipfile.ZipFile(zip_files[0], "r") as zf:
+            zp = ensure_fused_zip(zip_files[0])
+            with zipfile.ZipFile(zp, "r") as zf:
                 members = [n for n in zf.namelist() if Path(n).suffix.lower() in IMAGE_EXTS]
                 probe_single_images(model, zf, members, tmp_dir,
                                      duration=args.duration, fps=args.fps, n=args.probe)
@@ -324,13 +281,20 @@ def main():
             shutil.rmtree(tmp_dir, ignore_errors=True)
         return
 
-    print(f"Discovered {len(zip_files)} category zips")
+    print(f"Discovered {len(zip_files)} zip(s); writing per-image npzs to {out_dir}")
+    total_p = total_s = total_f = 0
     for zip_path in zip_files:
-        process_fairface_zips(model, zip_path, out_dir, tmp_root,
+        p, s, f = process_zip(model, zip_path, out_dir, tmp_root,
                               duration=args.duration, fps=args.fps,
                               batch_size=args.batch_size)
+        total_p += p
+        total_s += s
+        total_f += f
 
-    print("\nAll categories processed.")
+    print("\nAll zips processed.")
+    print(f"  Processed: {total_p}")
+    print(f"  Skipped (already done): {total_s}")
+    print(f"  Failed:    {total_f}")
     print(f"Outputs in: {out_dir.resolve()}")
 
 
