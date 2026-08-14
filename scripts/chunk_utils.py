@@ -272,3 +272,81 @@ def load_npz(path):
                 os.remove(temp_filepath)
             except Exception:
                 pass
+
+
+# ── Shared preds / zip schema helpers ─────────────────────────────────────────
+# Canonical general-population format (merged FairFace+FFHQ, FFHQ bulk, etc.):
+#   one .npz per image with preds shape (20484,) and key 'filename' (str)
+# Target / legacy multi-image format still accepted:
+#   preds (N, 20484) + 'filenames' (N,)
+
+
+def preds_as_image_vectors(preds):
+    """Normalize preds to (N_images, 20484). Never mean a 1D vector across vertices."""
+    preds = np.asarray(preds)
+    if preds.ndim == 1:
+        if preds.shape[0] != 20484:
+            raise ValueError(f"unexpected 1D preds shape {preds.shape}")
+        return preds.reshape(1, -1)
+    if preds.ndim == 2 and preds.shape[1] == 20484:
+        return preds
+    raise ValueError(f"unexpected preds shape {preds.shape}")
+
+
+def npz_image_names(data):
+    """
+    Return list[str] of zip-member / image names from an npz dict.
+    Accepts singular 'filename' (per-image) or plural 'filenames' (multi-image).
+    """
+    if "filenames" in data:
+        arr = np.asarray(data["filenames"])
+        return [str(x) for x in arr.tolist()]
+    if "filename" in data:
+        v = data["filename"]
+        if isinstance(v, np.ndarray):
+            v = v.item() if v.ndim == 0 else str(v.tolist())
+        return [str(v)]
+    raise KeyError("npz missing 'filename' or 'filenames'")
+
+
+def ensure_fused_zip(base_path, dest_path=None):
+    """
+    Return a path to a usable .zip.
+
+    If base_path already exists, return it. Otherwise look for
+    {stem}_chunk_NNN{suffix} next to it, fuse them into dest_path
+    (default: base_path), and return that.
+    """
+    base_path = Path(base_path)
+    dest_path = Path(dest_path) if dest_path is not None else base_path
+    if base_path.exists():
+        return base_path
+    if dest_path.exists() and dest_path != base_path:
+        return dest_path
+    chunks = get_chunk_paths(base_path)
+    if not chunks:
+        raise FileNotFoundError(
+            f"No zip at {base_path} and no chunks "
+            f"({base_path.stem}_chunk_NNN{base_path.suffix})"
+        )
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Fusing {len(chunks)} zip chunks -> {dest_path} ...")
+    fuse_chunks_to_file(base_path, dest_path)
+    return dest_path
+
+
+def resolve_zip_member(zf, name):
+    """
+    Resolve an image name against a zip's namelist.
+    Tries exact match, then basename-only match if unique.
+    """
+    names = zf.namelist()
+    if name in names:
+        return name
+    base = Path(name).name
+    hits = [n for n in names if Path(n).name == base]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        raise KeyError(f"ambiguous zip member basename {base!r}: {hits[:5]}...")
+    raise KeyError(f"zip member not found: {name!r}")
