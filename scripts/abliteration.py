@@ -28,27 +28,25 @@ KEY ARCHITECTURAL DIFFERENCE FROM abliteration.py:
   (model.data.video_feature.image.model.model) but a much cheaper path to it.
 
   y (brain response used to weight PCA direction-finding) is NOT recomputed
-  here -- it's read directly from the already-saved fairface_preds/*.npz and
-  target_preds/*.npz files (preds[:, mask].mean() per image), since those
-  already contain the full per-image predicted vertex vector.
+  here -- it's read directly from the already-saved per-image preds under
+  fairface + ffhq preds/ and target_preds/*.npz (mask-averaged per image),
+  since those already contain the full predicted vertex vector.
 
-DATA LAYOUT ASSUMPTIONS (adjust via CLI flags if yours differs):
-  --general-preds-dir   folder of category .npz (from infer_face_bulk.py),
-                         each with 'preds' (N,20484) and 'filenames' (N,)
-  --general-zips-dir    folder of the matching category .zip files (same
-                         stem as each .npz) -- needed to re-read raw images
-                         for activation collection (npz only stored brain
-                         predictions, not vjepa2 activations)
-  --target-preds-npz    target person's .npz (same format)
-  --target-zip          zip file containing the target person's raw images,
-                         with filenames matching target-preds-npz's 'filenames'
+DATA LAYOUT (merged FairFace+FFHQ baseline):
+  --general-preds-dir   folder of per-image .npz
+                         each with 'preds' (20484,) and 'filename' (str)
+  --general-zip         single zip of the matching images (may be chunked as
+                         {stem}_chunk_NNN.zip; fused automatically)
+  --target-preds-npz    target person's .npz
+                         'preds' (N,20484) + 'filenames' (N,)  OR per-image form
+  --target-zip          zip of the target person's raw images
 
 Usage:
   python scripts/abliteration.py \
-      --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
       --target-preds-npz ./target_preds/mia.npz --target-zip ./target/mia.zip \
       --tolerance -1.0 --n_components 3 --n_layers 5
 """
+
 
 import os, gc, sys, json, warnings, logging, argparse, zipfile, random
 from pathlib import Path
@@ -62,7 +60,19 @@ import cv2
 import torch
 from torchvision import transforms
 from tribev2.demo_utils import TribeModel
-from chunk_utils import discover_npz, load_npz
+from chunk_utils import (
+    discover_npz,
+    load_npz,
+    preds_as_image_vectors,
+    npz_image_names,
+    ensure_fused_zip,
+    resolve_zip_member,
+)
+
+GENERAL_PREDS_DIR = Path("./fairface + ffhq preds")
+GENERAL_ZIP = Path("./fairface + ffhq/fairface + ffhq.zip")
+TARGET_PREDS_NPZ = Path("./target_preds/mia.npz")
+TARGET_ZIP = Path("./target/mia.zip")
 
 # ── ROI definitions (Destrieux exact labels) ─────────────────────────────────
 
@@ -176,7 +186,8 @@ def image_to_vjepa_input(img_bgr):
 
 
 def decode_image_from_zip(zf: zipfile.ZipFile, name: str):
-    data = zf.read(name)
+    member = resolve_zip_member(zf, name)
+    data = zf.read(member)
     arr = np.frombuffer(data, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
@@ -186,55 +197,67 @@ def decode_image_from_zip(zf: zipfile.ZipFile, name: str):
 
 # ── Sample general-population images matched to their npz preds ────────────
 
-def sample_general_images(general_preds_dir: Path, general_zips_dir: Path,
+def sample_general_images(general_preds_dir: Path, general_zip: Path,
                            mask: np.ndarray, total_sample: int, seed: int = 0):
     """
-    Returns list of (img_bgr, y) tuples, y = preds[:, mask].mean() for that image,
-    sampled across category buckets so no single demographic bucket dominates.
+    Returns list of (img_bgr, y) tuples, y = preds[mask].mean() for that image.
+
+    Expects the merged flat layout: one .npz per image under general_preds_dir,
+    and one zip (possibly chunked) of the matching images. Samples uniformly
+    across the npz pool (no demographic bucket budget).
     """
     rng = random.Random(seed)
     npz_files = discover_npz(general_preds_dir)
     if not npz_files:
         raise FileNotFoundError(f"No npz files in {general_preds_dir}")
 
-    per_cat_budget = max(1, total_sample // len(npz_files))
-    print(f"Sampling ~{per_cat_budget} images per category ({len(npz_files)} categories)...")
+    zip_path = ensure_fused_zip(general_zip)
+    n_take = min(total_sample, len(npz_files))
+    chosen = rng.sample(npz_files, n_take)
+    print(f"Sampling {n_take}/{len(npz_files)} general-pop images from {zip_path.name}...")
 
     samples = []
-    for npz_path in npz_files:
-        zip_path = general_zips_dir / f"{npz_path.stem}.zip"
-        if not zip_path.exists():
-            print(f"  [WARN] no matching zip for {npz_path.stem}, skipping")
-            continue
-        data = load_npz(npz_path)
-        preds = data["preds"]
-        filenames = data["filenames"]
-        n = len(filenames)
-        if n == 0:
-            continue
-        idxs = rng.sample(range(n), min(per_cat_budget, n))
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            for i in idxs:
-                try:
-                    img = decode_image_from_zip(zf, str(filenames[i]))
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for npz_path in chosen:
+            try:
+                data = load_npz(npz_path)
+                preds = preds_as_image_vectors(data["preds"])
+                names = npz_image_names(data)
+                if preds.shape[0] != len(names):
+                    raise ValueError(
+                        f"{npz_path.name}: preds rows {preds.shape[0]} != "
+                        f"names {len(names)}"
+                    )
+                for i, name in enumerate(names):
+                    img = decode_image_from_zip(zf, name)
                     y = float(preds[i][mask].mean())
                     samples.append((img, y))
-                except Exception as e:
-                    print(f"  [WARN] {npz_path.stem}/{filenames[i]}: {e}")
+            except Exception as e:
+                print(f"  [WARN] {npz_path.name}: {e}")
 
     print(f"  Collected {len(samples)} general-population samples")
     return samples
 
 
 def load_target_images(target_preds_npz: Path, target_zip: Path, mask: np.ndarray):
+    """
+    Load target images. Accepts multi-image npz (preds (N,20484) + filenames)
+    or a single per-image npz (preds (20484,) + filename).
+    """
+    zip_path = ensure_fused_zip(target_zip)
     data = load_npz(target_preds_npz)
-    preds = data["preds"]
-    filenames = data["filenames"]
+    preds = preds_as_image_vectors(data["preds"])
+    names = npz_image_names(data)
+    if preds.shape[0] != len(names):
+        raise ValueError(
+            f"{target_preds_npz}: preds rows {preds.shape[0]} != names {len(names)}"
+        )
+
     samples = []
-    with zipfile.ZipFile(target_zip, "r") as zf:
-        for i, name in enumerate(filenames):
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for i, name in enumerate(names):
             try:
-                img = decode_image_from_zip(zf, str(name))
+                img = decode_image_from_zip(zf, name)
                 y = float(preds[i][mask].mean())
                 samples.append((img, y))
             except Exception as e:
@@ -462,10 +485,15 @@ def apply_surgery(encoder_blocks, all_dirs_by_layer, tolerance):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--general-preds-dir", required=True, type=Path)
-    parser.add_argument("--general-zips-dir", required=True, type=Path)
-    parser.add_argument("--target-preds-npz", required=True, type=Path)
-    parser.add_argument("--target-zip", required=True, type=Path)
+    parser.add_argument("--general-preds-dir", default=GENERAL_PREDS_DIR, type=Path,
+                        help='Per-image general-pop .npz folder '
+                             '(default: "./fairface + ffhq preds")')
+    parser.add_argument("--general-zip", default=GENERAL_ZIP, type=Path,
+                        help='Single zip of general-pop images '
+                             '(default: "./fairface + ffhq/fairface + ffhq.zip"; '
+                             'chunked {stem}_chunk_NNN.zip is fused automatically)')
+    parser.add_argument("--target-preds-npz", default=TARGET_PREDS_NPZ, type=Path)
+    parser.add_argument("--target-zip", default=TARGET_ZIP, type=Path)
     parser.add_argument("--cache-folder", default="./cache", type=Path)
     parser.add_argument("--tolerance", type=float, default=-1.0,
                         help="-1=full suppression, 0=neutral, +1=amplify")
@@ -476,7 +504,7 @@ def main():
                              "per the diagnostic, excluded by default).")
     parser.add_argument("--general-sample-size", type=int, default=2000,
                         help="Total general-population images to sample for activation "
-                             "collection (spread across category buckets).")
+                             "collection (uniform sample over per-image npzs).")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--use-weighted-pca-only", action="store_true",
                         help="Use the original weighted-PCA-only direction finding "
@@ -527,7 +555,7 @@ def main():
     print("="*60)
     target_samples = load_target_images(args.target_preds_npz, args.target_zip, mask)
     general_samples = sample_general_images(
-        args.general_preds_dir, args.general_zips_dir, mask,
+        args.general_preds_dir, args.general_zip, mask,
         total_sample=args.general_sample_size, seed=args.seed,
     )
 

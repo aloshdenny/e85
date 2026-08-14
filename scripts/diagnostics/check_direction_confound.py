@@ -2,7 +2,7 @@
 check_direction_confound.py
 
 Tests whether the extracted contrastive direction (from
-face_abliteration.py's find_directions_contrastive) is actually capturing
+abliteration.py's find_directions_contrastive) is actually capturing
 "Mia's facial identity" or "this photo looks different in low-level ways
 (lighting/contrast/camera/compression)" -- a confound that would explain
 why the general population drops as much or more than the target after
@@ -23,14 +23,12 @@ direction (component 0 of directions_L{layer}.npy).
   |corr(luminance, projection)| small  -> confound isn't the (main) issue;
     something else is going on and worth a different diagnostic.
 
-Requires face_abliteration.py's activation cache to already exist
-(OUT_DIR/raw_activations/raw_X_L{layer}.npy, raw_y_L{layer}.npy) -- run
-face_abliteration.py first if it doesn't.
+Requires abliteration.py's activation cache to already exist
+(OUT_DIR/raw_activations_*/raw_X_L{layer}.npy, raw_y_L{layer}.npy) -- run
+abliteration.py first if it doesn't.
 
 Usage:
   python scripts/diagnostics/check_direction_confound.py \
-      --general-preds-dir ./fairface_preds --general-zips-dir ./fairface \
-      --target-preds-npz ./target_preds/mia.npz --target-zip ./target/mia.zip \
       --layer 6 --general-sample-size 3000 --seed 0
 """
 
@@ -48,6 +46,10 @@ from abliteration import (
     sample_general_images,
     build_face_mask,
     OUT_DIR,
+    GENERAL_PREDS_DIR,
+    GENERAL_ZIP,
+    TARGET_PREDS_NPZ,
+    TARGET_ZIP,
 )
 
 
@@ -58,23 +60,23 @@ def luminance_contrast(img_bgr):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--general-preds-dir", required=True, type=Path)
-    parser.add_argument("--general-zips-dir", required=True, type=Path)
-    parser.add_argument("--target-preds-npz", required=True, type=Path)
-    parser.add_argument("--target-zip", required=True, type=Path)
+    parser.add_argument("--general-preds-dir", default=GENERAL_PREDS_DIR, type=Path)
+    parser.add_argument("--general-zip", default=GENERAL_ZIP, type=Path)
+    parser.add_argument("--target-preds-npz", default=TARGET_PREDS_NPZ, type=Path)
+    parser.add_argument("--target-zip", default=TARGET_ZIP, type=Path)
     parser.add_argument("--layer", type=int, required=True,
-                        help="One of the layers face_abliteration.py operated on "
+                        help="One of the layers abliteration.py operated on "
                              "(needs directions_L{layer}.npy and the raw activation "
                              "cache to exist for this layer).")
     parser.add_argument("--include-secondary", action="store_true")
     parser.add_argument("--general-sample-size", type=int, default=2000,
-                        help="MUST match the value used in the face_abliteration.py "
+                        help="MUST match the value used in the abliteration.py "
                              "run you're diagnosing, so sampling order lines up with "
                              "the cached activations.")
     parser.add_argument("--seed", type=int, default=0,
-                        help="MUST match the face_abliteration.py run being diagnosed.")
+                        help="MUST match the abliteration.py run being diagnosed.")
     parser.add_argument("--norm-enabled", dest="norm_enabled", action="store_true", default=True,
-                        help="Whether the face_abliteration.py run being diagnosed had "
+                        help="Whether the abliteration.py run being diagnosed had "
                              "photometric normalization ON (default) or you passed "
                              "--disable-photometric-norm there -- determines which "
                              "versioned cache directory to read from.")
@@ -88,7 +90,7 @@ def main():
 
     for p in [x_path, y_path, dirs_path]:
         if not p.exists():
-            sys.exit(f"[FATAL] {p} not found -- run face_abliteration.py first "
+            sys.exit(f"[FATAL] {p} not found -- run abliteration.py first "
                      f"(with matching --general-sample-size/--seed).")
 
     print("Loading cached activations and directions...")
@@ -105,7 +107,7 @@ def main():
           "(target_samples + general_samples)...")
     target_samples = load_target_images(args.target_preds_npz, args.target_zip, mask)
     general_samples = sample_general_images(
-        args.general_preds_dir, args.general_zips_dir, mask,
+        args.general_preds_dir, args.general_zip, mask,
         total_sample=args.general_sample_size, seed=args.seed,
     )
     all_samples = target_samples + general_samples
