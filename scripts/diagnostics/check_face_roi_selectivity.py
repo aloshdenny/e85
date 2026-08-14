@@ -9,27 +9,28 @@ other ~20 non-face ROIs / the rest of cortex too?
 Uses the same Destrieux (aparc.a2009s) exact-label masks as layer_analysis.py
 so results are directly comparable to what you'd actually ablate.
 
-Inputs expected (from infer_face_bulk.py output format -- .npz with a
-'preds' key of shape (N, 20484)):
-  --general-dir   folder of category .npz files (default: ./fairface_preds)
+Inputs (per-image .npz from the merged FairFace+FFHQ layout):
+  --general-dir   folder of general-population .npz (default: ./fairface + ffhq preds)
+                  each file: preds shape (20484,)  OR legacy (N, 20484)
   --target-npz    target .npz file or directory (default: ./target_preds)
 
 Usage:
   python scripts/diagnostics/check_face_roi_selectivity.py
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from chunk_utils import discover_npz, load_npz, npz_exists
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-
-GENERAL_DIR  = Path("./fairface_preds")   # folder of general-population .npz files
-TARGET_NPZ   = Path("./target_preds")     # target .npz file or directory (/**/*.npz)
+GENERAL_DIR = Path("./fairface + ffhq preds")
+TARGET_NPZ = Path("./target_preds")
 
 FACE_ROIS = {
     "OFA":  ["G_and_S_occipital_inf", "S_oc_middle_and_Lunatus", "Pole_occipital"],
@@ -37,8 +38,7 @@ FACE_ROIS = {
     "STS":  ["S_temporal_sup", "S_temporal_inf"],
     "ATL":  ["G_temporal_inf", "G_oc-temp_med-Parahip"],
     "TP":   ["Pole_temporal"],
-    # Familiarity/autobiographical nodes -- include only if target is a
-    # specific known person, not generic face detection. Toggle with --no-familiarity.
+    # Familiarity/autobiographical nodes -- toggle with --no-familiarity.
     "PREC": ["G_precuneus", "S_subparietal"],
     "MPFC": ["G_and_S_frontomargin", "G_and_S_transv_frontopol", "G_subcallosal"],
     "PCC":  ["G_cingul-Post-dorsal", "G_cingul-Post-ventral", "S_cingul-Marginalis"],
@@ -84,41 +84,109 @@ def build_masks(roi_dict, atlas_names, lh_labels, rh_labels):
     return masks
 
 
-def load_general_mean(general_dir: Path, per_category_average: bool):
+def _preds_as_image_vectors(preds: np.ndarray) -> np.ndarray:
+    """
+    Normalize preds to shape (N_images, 20484).
+
+    Flat per-image format (FairFace+FFHQ merge, FFHQ bulk): (20484,)
+    Legacy category format: (N, 20484)
+
+    Calling .mean(axis=0) on a 1D vector collapses VERTICES -- never do that.
+    """
+    preds = np.asarray(preds)
+    if preds.ndim == 1:
+        if preds.shape[0] != 20484:
+            raise ValueError(f"unexpected 1D preds shape {preds.shape}")
+        return preds.reshape(1, -1)
+    if preds.ndim == 2 and preds.shape[1] == 20484:
+        return preds
+    raise ValueError(f"unexpected preds shape {preds.shape}")
+
+
+def load_general_mean(general_dir: Path) -> tuple[np.ndarray, int]:
+    """
+    Running mean over all general-population images.
+
+    Streams one npz at a time so ~100k single-image files do not need to be
+    stacked in RAM (~8GB). Equal weight per image (no demographic buckets).
+    """
     npz_files = discover_npz(general_dir)
     if not npz_files:
         raise FileNotFoundError(f"No .npz files in {general_dir}")
-    cat_means = []
+
+    first = _preds_as_image_vectors(load_npz(npz_files[0])["preds"])
+    print(
+        f"  Detected npz format: "
+        f"{'single-image (1D preds)' if first.shape[0] == 1 and len(npz_files) > 1 else 'per-file preds'} "
+        f"-- pooling {len(npz_files)} file(s) with equal weight per image"
+    )
+
+    acc = np.zeros(20484, dtype=np.float64)
+    n_images = 0
     for f in npz_files:
-        data = load_npz(f)
-        cat_means.append(data["preds"].mean(axis=0))
-    if per_category_average:
-        # Equal weight per demographic bucket, regardless of image count --
-        # matches FairFace's stratification intent rather than letting larger
-        # buckets dominate the general-population estimate.
-        return np.stack(cat_means).mean(axis=0), len(npz_files)
+        vecs = _preds_as_image_vectors(load_npz(f)["preds"])
+        acc += vecs.sum(axis=0)
+        n_images += vecs.shape[0]
+
+    mean = (acc / n_images).astype(np.float32)
+    assert mean.shape == (20484,), (
+        f"general_mean has shape {mean.shape}, expected (20484,) -- "
+        f"1D preds were likely mean'd across vertices instead of images."
+    )
+    return mean, n_images
+
+
+def load_target_mean(target_npz: Path) -> tuple[np.ndarray, int]:
+    target_path = Path(target_npz)
+    if target_path.is_dir():
+        target_files = discover_npz(target_path, recursive=True)
+    elif npz_exists(target_path):
+        target_files = [target_path]
     else:
-        all_preds = np.concatenate([load_npz(f)["preds"] for f in npz_files], axis=0)
-        return all_preds.mean(axis=0), len(npz_files)
+        target_files = [
+            f for f in discover_npz(Path("."), recursive=True)
+            if str(target_npz) in str(f)
+        ]
+
+    if not target_files:
+        raise FileNotFoundError(f"No target .npz files found matching {target_npz}")
+
+    acc = np.zeros(20484, dtype=np.float64)
+    n_images = 0
+    for f in target_files:
+        vecs = _preds_as_image_vectors(load_npz(f)["preds"])
+        acc += vecs.sum(axis=0)
+        n_images += vecs.shape[0]
+
+    mean = (acc / n_images).astype(np.float32)
+    assert mean.shape == (20484,)
+    return mean, n_images
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--general-dir", default=GENERAL_DIR, type=Path,
-                        help="Folder of general population category .npz files (default: ./fairface_preds)")
-    parser.add_argument("--target-npz", default=TARGET_NPZ, type=Path,
-                        help="Target person .npz file or directory containing target .npz files (default: ./target_preds)")
-    parser.add_argument("--pooled-mean", action="store_true",
-                         help="Pool all general-population images before averaging "
-                              "instead of averaging per-category means equally. "
-                              "Default (off) treats each demographic bucket equally.")
-    parser.add_argument("--no-familiarity", action="store_true",
-                         help="Drop PREC/MPFC/PCC from the face ROI set -- use this "
-                              "if your target is generic face detection, not a "
-                              "specific known person.")
-    parser.add_argument("--top-pct", type=float, default=5.0,
-                         help="Percentile threshold (of |contrast|) used for the "
-                              "concentration check.")
+    parser = argparse.ArgumentParser(
+        description="Face ROI selectivity for target vs FairFace+FFHQ general population."
+    )
+    parser.add_argument(
+        "--general-dir", default=GENERAL_DIR, type=Path,
+        help="Folder of general-population per-image .npz "
+             "(default: ./fairface + ffhq preds)",
+    )
+    parser.add_argument(
+        "--target-npz", default=TARGET_NPZ, type=Path,
+        help="Target person .npz file or directory (default: ./target_preds)",
+    )
+    parser.add_argument(
+        "--no-familiarity", action="store_true",
+        help="Drop PREC/MPFC/PCC from the face ROI set -- use this "
+             "if your target is generic face detection, not a "
+             "specific known person.",
+    )
+    parser.add_argument(
+        "--top-pct", type=float, default=5.0,
+        help="Percentile threshold (of |contrast|) used for the "
+             "concentration check.",
+    )
     args = parser.parse_args()
 
     print("Loading Destrieux atlas (fsaverage5)...")
@@ -140,33 +208,16 @@ def main():
     print(f"Non-face ROIs retained: {list(non_face_masks.keys())}")
 
     print(f"\nLoading general population from {args.general_dir} ...")
-    general_mean, n_cats = load_general_mean(args.general_dir, per_category_average=not args.pooled_mean)
-    print(f"  {n_cats} category buckets, general_mean shape={general_mean.shape}")
+    general_mean, n_general = load_general_mean(args.general_dir)
+    print(f"  {n_general} images, general_mean shape={general_mean.shape}")
 
     print(f"Loading target person from {args.target_npz} ...")
-    target_path = Path(args.target_npz)
-    if target_path.is_dir():
-        target_files = discover_npz(target_path, recursive=True)
-    elif npz_exists(target_path):
-        target_files = [target_path]
-    else:
-        target_files = [
-            f for f in discover_npz(Path("."), recursive=True)
-            if str(args.target_npz) in str(f)
-        ]
-    
-    if not target_files:
-        raise FileNotFoundError(f"No target .npz files found matching {args.target_npz}")
-
-    target_preds_list = [load_npz(f)["preds"] for f in target_files]
-    target_preds_cat = np.concatenate(target_preds_list, axis=0)
-    target_mean = target_preds_cat.mean(axis=0)
-    print(f"  Loaded {target_preds_cat.shape[0]} target images across {len(target_files)} file(s)")
+    target_mean, n_target = load_target_mean(args.target_npz)
+    print(f"  {n_target} target image(s), target_mean shape={target_mean.shape}")
 
     contrast = target_mean - general_mean  # (20484,)
 
-    # ── Per-ROI mean contrast ────────────────────────────────────────────
-    all_masks = {**{k: v for k, v in face_masks.items()}, **{k: v for k, v in non_face_masks.items()}}
+    all_masks = {**face_masks, **non_face_masks}
     is_face = {k: (k in face_masks) for k in all_masks}
 
     rows = []
@@ -203,7 +254,6 @@ def main():
     else:
         print(">> No clear separation -- effect looks diffuse, not face-specific.")
 
-    # ── Energy concentration: where does the signal actually live? ──────
     all_31_mask = np.zeros_like(contrast, dtype=bool)
     for m in all_masks.values():
         all_31_mask |= m
@@ -231,10 +281,11 @@ def main():
     print(f"Actual: {actual_pct:.1f}%  "
           f"({'concentrated' if actual_pct > expected_pct_if_uniform * 1.5 else 'roughly uniform / diffuse'})")
 
-    # ── Top-K percentile concentration ───────────────────────────────────
     thresh = np.percentile(np.abs(contrast), 100 - args.top_pct)
     top_mask = np.abs(contrast) >= thresh
-    top_in_face = float((top_mask & all_31_mask & np.logical_or.reduce(list(face_masks.values()))).sum()) if face_masks else 0.0
+    top_in_face = float(
+        (top_mask & all_31_mask & np.logical_or.reduce(list(face_masks.values()))).sum()
+    ) if face_masks else 0.0
     print(f"\nOf the top {args.top_pct}% strongest-contrast vertices "
           f"({top_mask.sum()} verts), {top_in_face:.0f} "
           f"({top_in_face/max(top_mask.sum(),1)*100:.1f}%) fall inside face ROIs.")
