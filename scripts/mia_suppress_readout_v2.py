@@ -79,6 +79,9 @@ def main():
                     help="If set, suppress this person instead of Mia "
                          "(all zip members; holdout via --holdout-frac).")
     ap.add_argument("--holdout-frac", type=float, default=0.2)
+    ap.add_argument("--split-mode", choices=["random", "in_the_wild", "face_top"],
+                    default="random",
+                    help="Holdout split: random frac, in_the_wild paths, or top-FACE images.")
     ap.add_argument("--person", type=str, default=None)
     ap.add_argument("--general-zip", type=Path,
                     default=Path("./fairface + ffhq/fairface + ffhq.zip"))
@@ -94,6 +97,10 @@ def main():
                     help="Full-vector / non-face anchor.")
     ap.add_argument("--lam-anchor-face", type=float, default=20.0,
                     help="Hard pin on general-face FACE(OFA+FFA).")
+    ap.add_argument("--min-drop", type=float, default=0.015,
+                    help="If the target is NOT above FairFace, still pull their "
+                         "FACE down by this amount so the recipe is well-posed "
+                         "for any person, not only people who already spike.")
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--cache-folder", type=Path,
@@ -106,20 +113,30 @@ def main():
                     help="If set, write frozen-readout target_preds npz (preds+filenames).")
     args = ap.parse_args()
     rng = np.random.default_rng(args.seed)
+    person = args.person or "Mia"
+    zip_path = args.target_zip or args.mia_zip
+    face_top_items = None
 
-    if args.target_zip is not None:
+    if args.split_mode == "in_the_wild":
+        studio, wild = load_mia_from_zip(zip_path)
+        print(f"{person}: {len(studio)} train, {len(wild)} in-the-wild holdout "
+              f"(split=in_the_wild) from {zip_path}")
+    elif args.split_mode == "face_top":
+        face_top_items = load_all_from_zip(zip_path)
+        studio, wild = [], []
+        print(f"{person}: {len(face_top_items)} total; face_top split pending "
+              f"from {zip_path}")
+    elif args.target_zip is not None:
         items = load_all_from_zip(args.target_zip)
         rng.shuffle(items)
         n_ho = max(5, int(round(len(items) * args.holdout_frac)))
         if n_ho >= len(items) - 8:
             n_ho = max(5, len(items) // 5)
         wild, studio = items[:n_ho], items[n_ho:]
-        person = args.person or args.target_zip.stem
         print(f"{person}: {len(studio)} train, {len(wild)} holdout "
-              f"from {args.target_zip}")
+              f"(split=random) from {args.target_zip}")
     else:
         studio, wild = load_mia_from_zip(args.mia_zip)
-        person = args.person or "Mia"
         print(f"{person}: {len(studio)} studio (train), {len(wild)} in-the-wild (holdout)")
 
     reuse_gen = args.bottleneck_cache.exists()
@@ -127,11 +144,33 @@ def main():
     if not reuse_gen:
         general = load_general_images(args.general_zip, args.n_general, args.seed)
         print(f"general portraits loaded: {len(general)}")
-    if len(studio) < 8 or len(wild) < 5:
+    if face_top_items is None and (len(studio) < 8 or len(wild) < 5):
         raise SystemExit("need enough train + holdout images of the target")
 
     cache = args.bottleneck_cache
-    recapture_target = args.target_zip is not None
+    recapture_target = (
+        args.target_zip is not None
+        or args.split_mode in ("in_the_wild", "face_top")
+    )
+
+    def split_face_top(X_all, all_names, W0_np, b0_np):
+        masks_e = build_masks()
+        face_me = masks_e["FACE(OFA+FFA)"]
+        scores = (X_all @ W0_np + b0_np)[:, face_me].mean(axis=1)
+        n_ho = max(5, int(round(len(all_names) * args.holdout_frac)))
+        if n_ho >= len(all_names) - 8:
+            n_ho = max(5, len(all_names) // 5)
+        ho_idx = np.argsort(-scores)[:n_ho]
+        st_idx = np.array([i for i in range(len(all_names)) if i not in set(ho_idx)])
+        X_st_o = X_all[st_idx]
+        X_ho_o = X_all[ho_idx]
+        st_n = [all_names[i] for i in st_idx]
+        ho_n = [all_names[i] for i in ho_idx]
+        print(f"face_top split: {len(st_idx)} train FACE={scores[st_idx].mean():+.5f}  "
+              f"{len(ho_idx)} holdout FACE={scores[ho_idx].mean():+.5f}  "
+              f"(holdout range {scores[ho_idx].min():+.5f}..{scores[ho_idx].max():+.5f})")
+        return X_st_o, st_n, X_ho_o, ho_n
+
     if cache.exists():
         d = np.load(cache, allow_pickle=True)
         X_gen, gen_names = d["X_gen"], [str(x) for x in d["gen_names"]]
@@ -145,10 +184,17 @@ def main():
             b0_t = fe.predictor.bias[0].detach().clone()
             W0_np, b0_np = W0_t.cpu().numpy(), b0_t.cpu().numpy()
             tmp_root = get_tmp_root()
-            print(f"Capturing bottlenecks: {len(studio)} train...")
-            X_st, st_names = capture_bottlenecks(model, fe, studio, args.batch, tmp_root)
-            print(f"Capturing bottlenecks: {len(wild)} holdout...")
-            X_ho, ho_names = capture_bottlenecks(model, fe, wild, args.batch, tmp_root)
+            if face_top_items is not None:
+                print(f"Capturing bottlenecks: {len(face_top_items)} all (face_top)...")
+                X_all, all_names = capture_bottlenecks(
+                    model, fe, face_top_items, args.batch, tmp_root)
+                X_st, st_names, X_ho, ho_names = split_face_top(
+                    X_all, all_names, W0_np, b0_np)
+            else:
+                print(f"Capturing bottlenecks: {len(studio)} train...")
+                X_st, st_names = capture_bottlenecks(model, fe, studio, args.batch, tmp_root)
+                print(f"Capturing bottlenecks: {len(wild)} holdout...")
+                X_ho, ho_names = capture_bottlenecks(model, fe, wild, args.batch, tmp_root)
             free()
         else:
             X_st, st_names = d["X_st"], [str(x) for x in d["st_names"]]
@@ -171,10 +217,17 @@ def main():
         W0_t, b0_t = W0.to(device), b0.to(device)
         print(f"frozen readout W {tuple(W0.shape)}")
         tmp_root = get_tmp_root()
-        print(f"Capturing bottlenecks: {len(studio)} train...")
-        X_st, st_names = capture_bottlenecks(model, fe, studio, args.batch, tmp_root)
-        print(f"Capturing bottlenecks: {len(wild)} holdout...")
-        X_ho, ho_names = capture_bottlenecks(model, fe, wild, args.batch, tmp_root)
+        if face_top_items is not None:
+            print(f"Capturing bottlenecks: {len(face_top_items)} all (face_top)...")
+            X_all, all_names = capture_bottlenecks(
+                model, fe, face_top_items, args.batch, tmp_root)
+            X_st, st_names, X_ho, ho_names = split_face_top(
+                X_all, all_names, W0_np, b0_np)
+        else:
+            print(f"Capturing bottlenecks: {len(studio)} train...")
+            X_st, st_names = capture_bottlenecks(model, fe, studio, args.batch, tmp_root)
+            print(f"Capturing bottlenecks: {len(wild)} holdout...")
+            X_ho, ho_names = capture_bottlenecks(model, fe, wild, args.batch, tmp_root)
         print(f"Capturing bottlenecks: {len(general)} general...")
         X_gen, gen_names = capture_bottlenecks(model, fe, general, args.batch, tmp_root)
         free()
@@ -184,6 +237,9 @@ def main():
                  X_gen=X_gen, gen_names=np.array(gen_names),
                  W0=W0_np, b0=b0_np)
         print(f"cached bottlenecks -> {cache}")
+
+    if len(X_st) < 8 or len(X_ho) < 5:
+        raise SystemExit(f"need enough train + holdout after split ({len(X_st)}/{len(X_ho)})")
 
     masks = build_masks()
     face_m = masks["FACE(OFA+FFA)"]
@@ -215,14 +271,24 @@ def main():
     base_rh = X_rh @ W0_np + b0_np
     base_tr = X_tr @ W0_np + b0_np
 
-    target_face = float(base_tr[:, face_m].mean())
-    print(f"\nFACE means (frozen readout)")
-    print(f"  train-anchor FairFace {target_face:+.5f}")
-    print(f"  train {person:16s}    {base_st[:, face_m].mean():+.5f}")
+    gen_face = float(base_tr[:, face_m].mean())
+    self_face = float(base_st[:, face_m].mean())
+    if self_face > gen_face + 0.003:
+        target_face = gen_face
+        print(f"\nFACE means (frozen readout)  -> PULL TO FAIRFACE MEAN "
+              f"(target is elevated)")
+    else:
+        target_face = self_face - args.min_drop
+        print(f"\nFACE means (frozen readout)  -> PULL THIS IDENTITY DOWN "
+              f"by {args.min_drop:.3f} (not elevated vs FairFace; still a "
+              f"selective-control test)")
+    print(f"  suppress-to               {target_face:+.5f}")
+    print(f"  train-anchor FairFace     {gen_face:+.5f}")
+    print(f"  train {person:16s}    {self_face:+.5f}")
     print(f"  holdout {person:14s}    {base_ho[:, face_m].mean():+.5f}")
-    print(f"  TRIBE neighbors       {base_nb[:, face_m].mean():+.5f}  "
+    print(f"  TRIBE neighbors           {base_nb[:, face_m].mean():+.5f}  "
           f"(sim {sim[nb_idx].mean():+.3f}..{sim[nb_idx].max():+.3f})")
-    print(f"  random FairFace hold  {base_rh[:, face_m].mean():+.5f}")
+    print(f"  random FairFace hold      {base_rh[:, face_m].mean():+.5f}")
 
     nonface_t = torch.tensor(nonface_w, device=device)
     target_t = torch.tensor(target_face, device=device)
@@ -283,24 +349,24 @@ def main():
     def face(a):
         return float(a[:, face_m].mean())
 
-    wild_gap = face(base_ho) - target_face
     wild_drop = face(base_ho) - face(ft_ho)
     rand_drop = face(base_rh) - face(ft_rh)
     nb_drop = face(base_nb) - face(ft_nb)
+    intended = (face(base_ho) - target_face)
     print("\n" + "=" * 64)
     print("V2 VERDICT")
     print(f"  {person} holdout FACE drop {wild_drop:+.5f}  "
-          f"({100 * wild_drop / (wild_gap + 1e-9):.0f}% of gap to FairFace mean)")
-    print(f"  random FairFace drop   {rand_drop:+.5f}  (must stay ~0)")
-    print(f"  TRIBE-neighbor drop    {nb_drop:+.5f}")
+          f"({100 * wild_drop / (intended + 1e-9):.0f}% of intended move)")
+    print(f"  random FairFace drop      {rand_drop:+.5f}  (must stay ~0)")
+    print(f"  TRIBE-neighbor drop       {nb_drop:+.5f}")
     selective = abs(rand_drop) < 0.4 * abs(wild_drop) if abs(wild_drop) > 1e-4 else abs(rand_drop) < 0.002
-    closed = wild_drop > 0.5 * wild_gap if wild_gap > 0 else False
+    closed = wild_drop > 0.5 * max(intended, 1e-4)
     if closed and selective:
-        print(f"  OK: identity-selective. Holdout {person} came down, random faces did not.")
+        print(f"  OK: identity-selective. Holdout {person} moved, random faces did not.")
     elif closed and not selective:
-        print("  FAIL: gap closed but random FairFace moved. Global FACE damp.")
+        print("  FAIL: target moved but random FairFace moved too. Global FACE damp.")
     elif selective and not closed:
-        print(f"  FAIL: selective but holdout {person} did not come down enough.")
+        print(f"  FAIL: selective but holdout {person} did not move enough.")
     else:
         print(f"  FAIL: neither selective nor effective on holdout {person}.")
     print("=" * 64)
@@ -308,6 +374,7 @@ def main():
     args.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez(args.out, U=U.cpu().numpy(), V=V.cpu().numpy(), rank=args.rank,
              target_face=target_face,
+             split_mode=args.split_mode,
              lam_suppress=args.lam_suppress, lam_anchor=args.lam_anchor,
              lam_anchor_face=args.lam_anchor_face,
              neighbor_names=np.array([gen_names[i] for i in nb_idx]),

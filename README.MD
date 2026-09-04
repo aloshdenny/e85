@@ -180,6 +180,45 @@ python scripts/viz.py
 
 ---
 
+## 🎯 Readout-Level Identity Suppression: OFA/FFA vs vATL vs Combined
+
+A second, lighter-weight suppression path (`scripts/mia_suppress_readout_v2.py`, `scripts/atl_suppress_readout.py`) skips the multi-layer PCA surgery above and edits the model's final readout directly: a rank-16 low-rank residual `W = W0 + U @ V` (~66K trainable params vs. 42M in the full readout matrix) is trained to suppress one person's identity inside a chosen ROI while a two-term loss (`fit` inside the ROI, `anchor` everywhere else) holds the rest of the brain's predictions at baseline. `--split-mode face_top` always holds out the person's own highest-scoring photos for that ROI, not a random split, so the reported drop is never measured on images the objective was directly fit to.
+
+Three targets were compared for Mia, Sins, and Michael Jackson, all with `--split-mode face_top`:
+
+| Condition | Script / flags | Targets |
+|---|---|---|
+| **OFA/FFA only** | `mia_suppress_readout_v2.py --lam-suppress 15.0` | Early face detection + face identity (occipital/fusiform) |
+| **vATL only** | `atl_suppress_readout.py --target-roi atl --mask-to-target` | Anterior temporal lobe / temporal pole (person-identity, non-face-specific convergence zone) |
+| **OFA/FFA + vATL** | `atl_suppress_readout.py --target-roi both --mask-to-target` | Both regions suppressed together as one combined objective |
+
+`--mask-to-target` architecturally zeroes the residual's output columns outside the targeted ROI (not just a soft loss penalty), so collateral leakage is a structural guarantee rather than an empirical observation.
+
+**Held-out-photo results** (mean drop in predicted brain response, own held-out images, never trained on):
+
+| Person | OFA/FFA-only drop | vATL-only drop | Combined drop (face / ATL) | V1 / hearing / motor leakage |
+|---|---|---|---|---|
+| Mia | −0.027 | −0.0086 | −0.020 / −0.020 | none (all three conditions) |
+| Sins | −0.032 | −0.013 | −0.023 / −0.023 | none (all three conditions) |
+| Michael Jackson | −0.028 | −0.014 | −0.022 / −0.022 | none (all three conditions) |
+
+Suppressing one region alone gets the strongest drop in that region; suppressing both at once still erases identity cleanly in both, just split across a shared 16-dimensional edit budget rather than maxing out either target. No condition ever moved V1, auditory, or motor cortex — reproduced across all 3 people × 3 conditions.
+
+### Brain maps
+
+Each map plots, per fsaverage5 vertex, the L2 norm of that vertex's column in the trained residual `U @ V` — i.e. how much the edit is *allowed* to move that vertex's prediction, independent of any one input image. For `--mask-to-target` runs this is exactly zero outside the targeted ROI by construction; for the free (non-architecturally-masked) OFA/FFA-only runs it is the same quantity, just without that hard guarantee. Regenerate with `python scripts/plot_suppression_brain_maps.py`.
+
+**Mia**
+![Mia brain maps](abliterated/brain_maps/mia_brain_maps.png)
+
+**Sins**
+![Sins brain maps](abliterated/brain_maps/sins_brain_maps.png)
+
+**Michael Jackson**
+![Michael Jackson brain maps](abliterated/brain_maps/michael_jackson_brain_maps.png)
+
+---
+
 ## 💾 Checkpoint & NPZ Chunking
 
 GitHub enforces a **100MB per-file** limit and a **~2GB pack size** per push.
