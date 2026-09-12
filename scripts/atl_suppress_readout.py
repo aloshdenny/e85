@@ -251,15 +251,19 @@ def main():
     atl_only_m = masks["ATL_TP"]
     face_only_m = masks["FACE(OFA+FFA)"]
     if args.target_roi == "atl":
-        target_m, face_m = atl_only_m, face_only_m          # watch FACE for collateral
+        target_m, face_m, watch_label = atl_only_m, face_only_m, "FACE(OFA+FFA)"
     elif args.target_roi == "face":
-        target_m, face_m = face_only_m, atl_only_m          # watch ATL for collateral
+        target_m, face_m, watch_label = face_only_m, atl_only_m, "ATL_TP"
     else:  # both
         target_m = atl_only_m | face_only_m
-        face_m = np.zeros(20484, dtype=bool)                # no separate "other face-pathway
-                                                              # region" left to watch; V1/AUD/
-                                                              # MOTOR (already reported) cover
-                                                              # the collateral question instead
+        # No face-pathway region is left to "watch" once both are the target
+        # -- checking an empty mask here previously degenerated pattern_stats()
+        # to cos=0.0/rel_L2=0.0 (an empty-array artifact, not a real number)
+        # and printed a false "pattern moved" verdict. V1 is the region this
+        # whole project already treats as the standard "must never move"
+        # reference, so it's the meaningful thing to pattern-check against
+        # when there's no face-pathway region left outside the target.
+        face_m, watch_label = masks["V1"], "V1"
     generic_w = np.ones(20484, dtype=np.float32)
     generic_w[target_m] = 0.0             # target gets its own dedicated loss term below
 
@@ -300,7 +304,7 @@ def main():
     print(f"  train-anchor FairFace     {gen_target:+.5f}")
     print(f"  train {person:16s}    {self_target:+.5f}")
     print(f"  holdout {person:14s}    {base_ho[:, target_m].mean():+.5f}")
-    print(f"  holdout {person} FACE(OFA+FFA) (unpinned, watch only) "
+    print(f"  holdout {person} {watch_label} (unpinned, watch only) "
           f"{base_ho[:, face_m].mean():+.5f}")
 
     generic_t = torch.tensor(generic_w, device=device)
@@ -402,13 +406,13 @@ def main():
               f"rel_L2={rel_l2.mean():.4f} (max {rel_l2.max():.4f})")
         return float(cos.mean()), float(rel_l2.mean())
 
-    print("\nPATTERN-level FACE(OFA+FFA) check (776-d vector per image, not the mean)")
+    print(f"\nPATTERN-level {watch_label} check (per-image vector, not the mean)")
     print("  cos=1.0 / rel_L2=0.0 means the pattern is untouched; a mean-collateral of")
     print("  0.00000 does NOT by itself guarantee this.")
     face_cos_ho, face_rl2_ho = pattern_stats(base_ho, ft_ho, face_m,
-                                             f"{person} holdout FACE pattern")
+                                             f"{person} holdout {watch_label} pattern")
     face_cos_rh, face_rl2_rh = pattern_stats(base_rh, ft_rh, face_m,
-                                             "random FairFace FACE pattern")
+                                             f"random FairFace {watch_label} pattern")
     atl_cos_ho, atl_rl2_ho = pattern_stats(base_ho, ft_ho, target_m,
                                            f"{person} holdout ATL_TP pattern (target, for reference)")
 
@@ -418,10 +422,10 @@ def main():
           f"({100 * wild_drop / (intended + 1e-9):.0f}% of intended move)")
     print(f"  random FairFace ATL_TP drop     {rand_drop:+.5f}  (must stay ~0)")
     print(f"  TRIBE-neighbor ATL_TP drop      {nb_drop:+.5f}")
-    print(f"  {person} holdout FACE collateral  {face_collateral:+.5f}  "
+    print(f"  {person} holdout {watch_label} collateral  {face_collateral:+.5f}  "
           f"(unpinned -- the claim predicts this moves too)")
-    print(f"  random FairFace FACE collateral {face_rand_collateral:+.5f}  "
-          f"(if this moves, ATL suppression leaked into general face processing)")
+    print(f"  random FairFace {watch_label} collateral {face_rand_collateral:+.5f}  "
+          f"(if this moves, the edit leaked beyond its target)")
     selective = abs(rand_drop) < 0.4 * abs(wild_drop) if abs(wild_drop) > 1e-4 else abs(rand_drop) < 0.002
     closed = wild_drop > 0.5 * max(intended, 1e-4)
     if closed and selective:
@@ -433,21 +437,21 @@ def main():
     else:
         print(f"  ATL_TP itself: FAIL -- neither selective nor effective.")
     if abs(face_collateral) > 0.3 * abs(wild_drop) and abs(wild_drop) > 1e-4:
-        print(f"  COLLATERAL: FACE(OFA+FFA) moved substantially with ATL_TP "
-              f"({abs(face_collateral)/max(abs(wild_drop),1e-9):.0%} of the ATL move) -- "
-              f"consistent with ATL not being a clean, separable node.")
+        print(f"  COLLATERAL: {watch_label} moved substantially with the target "
+              f"({abs(face_collateral)/max(abs(wild_drop),1e-9):.0%} of the target move) -- "
+              f"consistent with the target not being a clean, separable node.")
     else:
-        print(f"  COLLATERAL: FACE(OFA+FFA) stayed roughly put "
-              f"({abs(face_collateral)/max(abs(wild_drop),1e-9):.0%} of the ATL move).")
+        print(f"  COLLATERAL: {watch_label} stayed roughly put "
+              f"({abs(face_collateral)/max(abs(wild_drop),1e-9):.0%} of the target move).")
     if args.mask_to_target:
-        print(f"  mask_to_target=True: FACE(OFA+FFA) mean collateral is architecturally "
+        print(f"  mask_to_target=True: {watch_label} mean collateral is architecturally "
               f"forced to 0 -- the number above should read essentially 0.00000 by "
               f"construction. What ISN'T forced to zero is the PATTERN check below.")
     print(f"\n  PATTERN check (this is the number the mean can hide):")
-    print(f"    {person} holdout FACE  cos={face_cos_ho:.5f}  rel_L2={face_rl2_ho:.4f}")
-    print(f"    random FairFace FACE   cos={face_cos_rh:.5f}  rel_L2={face_rl2_rh:.4f}")
+    print(f"    {person} holdout {watch_label}  cos={face_cos_ho:.5f}  rel_L2={face_rl2_ho:.4f}")
+    print(f"    random FairFace {watch_label}   cos={face_cos_rh:.5f}  rel_L2={face_rl2_rh:.4f}")
     if face_cos_ho < 0.999 or face_rl2_ho > 0.02:
-        print(f"    NOT untouched: the FACE pattern moved even though the mean read "
+        print(f"    NOT untouched: the {watch_label} pattern moved even though the mean read "
               f"~{face_collateral:+.5f}. Averaging was hiding real structure change.")
     else:
         print(f"    genuinely untouched, not just mean-zero: pattern survives at "
