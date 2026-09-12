@@ -34,8 +34,8 @@ import sys
 sys.path.append(str(Path(__file__).parent))
 from measure_identity_signal import build_masks
 
-OUT_DIR = Path("/Users/aoxo/vscode/e85/abliterated/brain_maps")
-ABL_DIR = Path("/Users/aoxo/vscode/e85/abliterated")
+OUT_DIR = Path("./analysis")
+ABL_DIR = Path("./abliterated")
 
 PEOPLE = {
     "Mia": {
@@ -127,7 +127,7 @@ def main():
         axes[0, 0].set_ylabel("left hemi", fontsize=11)
         axes[1, 0].set_ylabel("right hemi", fontsize=11)
 
-        out_png = OUT_DIR / f"{person.lower().replace(' ', '_')}_brain_maps.png"
+        out_png = OUT_DIR / f"identity_suppression_{person.lower().replace(' ', '_')}.png"
         fig.savefig(out_png, dpi=150, bbox_inches="tight")
         plt.close(fig)
         print(f"Saved -> {out_png}")

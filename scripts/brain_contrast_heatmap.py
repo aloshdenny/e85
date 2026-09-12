@@ -200,7 +200,7 @@ def main():
         "--target-preds-dir", default=TARGET_DIR, type=Path,
         help="Target person .npz file or directory (default: ./target_preds)",
     )
-    parser.add_argument("--out-dir", default=Path("./brain_contrast"), type=Path)
+    parser.add_argument("--out-dir", default=Path("./analysis"), type=Path)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--include-secondary", action="store_true",
                       help="Outline the full face circuit (OFA/FFA + STS/ATL/TP/PREC/MPFC/PCC). "
