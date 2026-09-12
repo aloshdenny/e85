@@ -1,0 +1,120 @@
+{
+  "mia": {
+    "sim_thresh": 0.38,
+    "zip_prefix": "mia",
+    "queries": [
+      "mia khalifa portrait photoshoot",
+      "mia khalifa interview face",
+      "mia khalifa red carpet",
+      "mia khalifa instagram selfie",
+      "mia khalifa podcast screenshot",
+      "mia khalifa professional headshot",
+      "site:pinterest.com mia khalifa",
+      "site:pinterest.com mia khalifa portrait",
+      "site:pinterest.com miakhalifa",
+      "miakhalifa instagram",
+      "mia khalifa youtube thumbnail face",
+      "mia khalifa tv appearance",
+      "mia khalifa magazine cover",
+      "mia khalifa candid photo",
+      "mia khalifa studio lighting portrait"
+    ],
+    "laion_queries": [
+      "mia khalifa portrait",
+      "mia khalifa face photo",
+      "miakhalifa instagram selfie",
+      "mia khalifa interview",
+      "mia khalifa red carpet",
+      "mia khalifa headshot"
+    ],
+    "scout2_queries": [
+      "site:reddit.com mia khalifa photo",
+      "site:flickr.com mia khalifa",
+      "site:wikimedia.org mia khalifa",
+      "site:newsweek.com mia khalifa",
+      "site:vogue.in mia khalifa fashion",
+      "site:instagram.com miakhalifa",
+      "mia khalifa paris fashion week schiaparelli",
+      "mia khalifa kenzo menswear show",
+      "mia khalifa chanel milan fashion week",
+      "mia khalifa espn podcast photo",
+      "mia khalifa sheytan jewelry launch",
+      "mia khalifa adidas party los angeles",
+      "mia khalifa hawtcelebs photocall",
+      "mia khalifa purepeople france",
+      "site:imdb.com mia khalifa",
+      "mia khalifa tiktok screenshot face",
+      "site:tumblr.com mia khalifa",
+      "site:freepressjournal.in mia khalifa",
+      "mia khalifa vogue india get ready",
+      "site:celebmafia.com mia khalifa"
+    ],
+    "scout2_laion_queries": [
+      "mia khalifa fashion week paris photograph",
+      "mia khalifa real photo interview 2023",
+      "mia khalifa photocall red carpet",
+      "miakhalifa press photo",
+      "mia khalifa television appearance screenshot",
+      "mia khalifa sports podcast photo"
+    ]
+  },
+  "sins": {
+    "sim_thresh": 0.32,
+    "zip_prefix": "sins",
+    "queries": [
+      "johnny sins portrait",
+      "johnny sins interview face",
+      "johnny sins bald head photo",
+      "johnny sins instagram",
+      "johnny sins podcast screenshot",
+      "johnny sins professional photo",
+      "site:pinterest.com johnny sins",
+      "site:pinterest.com johnnysins",
+      "johnny sins youtube thumbnail",
+      "johnny sins meme face",
+      "johnny sins tv appearance",
+      "johnny sins candid photo",
+      "johnny sins photoshoot",
+      "john sins actor portrait",
+      "johnny sins reddit image"
+    ],
+    "laion_queries": [
+      "johnny sins portrait",
+      "johnny sins face photo",
+      "johnny sins bald head",
+      "johnny sins interview",
+      "johnnysins instagram",
+      "johnny sins meme"
+    ],
+    "scout2_queries": [
+      "site:reddit.com johnny sins photo",
+      "site:flickr.com johnny sins",
+      "site:twitter.com johnny sins",
+      "johnny sins twitch stream face",
+      "johnny sins cameo advertisement",
+      "johnny sins podcast jre screenshot",
+      "johnny sins lift carry meme original",
+      "johnny sins plumber costume photo",
+      "johnny sins firefighter photo",
+      "johnny sins doctor scrubs photo",
+      "johnny sins award show",
+      "johnny sins convention meet fan",
+      "site:imdb.com johnny sins",
+      "johnny sins behind the scenes set",
+      "johnny sins tiktok face",
+      "site:tumblr.com johnny sins",
+      "johnny sins onlyfans promo face",
+      "johnny sins youtube vlog face",
+      "johnny sins bald interview studio",
+      "site:news.com johnny sins"
+    ],
+    "scout2_laion_queries": [
+      "johnny sins interview photograph real",
+      "johnny sins bald man portrait photo",
+      "johnny sins actor behind the scenes",
+      "johnnysins television cameo screenshot",
+      "johnny sins convention photo fan",
+      "johnny sins professional headshot"
+    ]
+  }
+}
