@@ -1,6 +1,6 @@
 # TRIBE v2 Face Identity Abliteration Pipeline
 
-A fully data-driven pipeline for surgeon-like **face identity suppression** inside the TRIBE v2 brain model. Same model and abliteration goal as [janice-stfu](https://github.com/aloshdenny/janice-stfu), retargeted from video concept categories to a **specific person's face**, with a 101,698-image FairFace + FFHQ general-population baseline, face-selective cortical ROI masks (OFA/FFA), multi-layer PCA weight surgery, and automated artifact chunking for GitHub.
+A fully data-driven pipeline for surgeon-like **face identity suppression** inside the TRIBE v2 brain model. Same model and abliteration goal as [janice-stfu](https://github.com/aloshdenny/janice-stfu), retargeted from video concept categories to a **specific person's face**, with a 101,698-image FairFace + FFHQ general-population baseline, face-selective cortical ROI masks (OFA, FFA, vATL/TP), and two independent suppression paths: multi-layer PCA weight surgery on the V-JEPA2 backbone, and a rank-16 low-rank residual edit on the model's final readout — plus automated artifact chunking for GitHub.
 
 ---
 
@@ -52,20 +52,28 @@ val/                    # holdout images for validation (target + general faces)
   ├── euro1_face.jpg
   └── ...
 
-brain_contrast/         # outputs of brain_contrast_heatmap.py
-  ├── ofa_ffa.png
+analysis/               # curated, final-result visualizations (the pictures, not the weights)
+  ├── ofa_ffa.png                          # brain_contrast_heatmap.py
   ├── all_visual.png
-  └── entire_brain.png
+  ├── entire_brain.png
+  ├── identity_suppression_mia.png         # plot_suppression_brain_maps.py
+  ├── identity_suppression_sins.png
+  ├── identity_suppression_michael_jackson.png
+  ├── suppression_three_conditions.png     # OFA/FFA-only vs vATL-only vs combined
+  └── suppression_free_vs_masked.png       # architectural masking sanity check
 
-abliterated/            # outputs of abliteration.py
+abliterated/            # raw model artifacts: trained weights, directions, logs
   ├── vjepa2_hf_checkpoint/   # HF-format sharded safetensors for validation redirect
   ├── directions_L{idx}.npy
   ├── surgery_log.json
+  ├── *_suppress_readout*.npz             # rank-16 low-rank residuals (U, V) + verdicts
   ├── raw_activations_norm/
   └── masks/
       ├── face_mask.npy
       └── layer_profile.npy
 ```
+
+> **`scripts/legacy/`**: this project went through several abandoned directions before the low-rank readout residual (`mia_suppress_readout*.py`, `atl_suppress_readout.py`) worked — searching for a suppression direction in V-JEPA2's own activation space, fine-tuning against real fMRI datasets (ds007369, Hyperface/NOD), part-based occlusion mapping, photometric confound checks. Each is a real, documented negative or partial result, not dead code, so it's kept rather than deleted — just moved out of the way of the current pipeline. Nothing in the top-level `scripts/` folder imports from `scripts/legacy/`.
 
 > **Target Specification**: All `*.zip` under `./target/` and all `*.npz` under `./target_preds/` are discovered recursively.
 
@@ -85,11 +93,11 @@ The dependency chain, with the two baselines running independently:
 
 ```mermaid
 flowchart TD
-    A["0. (Optional) Crop Faces<br/>diagnostics/crop_faces.py"] --> B1["1a. FairFace Baseline<br/>infer_fairface_bulk.py"]
+    A["0. (Optional) Crop Faces<br/>crop_TARGET_from_downloads.py"] --> B1["1a. FairFace Baseline<br/>infer_fairface_bulk.py"]
     A --> B2["1b. FFHQ Baseline<br/>infer_ffhq_bulk.py"]
     B1 --> C["2. Target Face Inference<br/>infer_target_face.py"]
     B2 --> C
-    C --> D["3. ROI Selectivity Diagnostic<br/>check_face_roi_selectivity.py"]
+    C --> D["3. ROI Selectivity Diagnostic<br/>measure_identity_signal.py"]
     D --> D2["3b. Contrast Heatmap<br/>brain_contrast_heatmap.py"]
     D2 --> E["4. Identity Abliteration<br/>abliteration.py"]
     E --> F["5. Validation<br/>validation.py"]
@@ -97,9 +105,9 @@ flowchart TD
 ```
 
 ### 0. (Optional) Crop Faces
-Detects the highest-confidence face per image with MTCNN and crops in place under `./target/` (configurable `SRC_DIR` in the script).
+Detects the target identity's face with InsightFace (`buffalo_l`), clustering out other people who show up in the same mixed photo dump, and crops+rotates upright in place. One script per target (`crop_mia_from_downloads.py`, `crop_sins_from_downloads.py`, `crop_mj_from_downloads.py`) since the source folder and clustering template differ per person; copy the pattern for a new target.
 ```bash
-python scripts/diagnostics/crop_faces.py
+python scripts/crop_mia_from_downloads.py
 ```
 Zip cropped faces under `./target/` before running target inference.
 
@@ -127,18 +135,18 @@ python scripts/infer_target_face.py
 ```
 
 ### 3. ROI Selectivity Diagnostic
-Checks whether the target-vs-general contrast is concentrated in face-selective ROIs (OFA, FFA, STS, ATL, TP, …) or diffuse across cortex. Defaults to the merged FairFace+FFHQ per-image preds. Run before surgery to confirm a clean, face-localised signal.
+Checks whether the target-vs-general contrast is concentrated in face-selective ROIs (OFA, FFA, STS, ATL, TP, …) or diffuse across cortex, at both the mask-mean and the gain-free pattern level. Defaults to the merged FairFace+FFHQ per-image preds. Run before surgery to confirm a clean, face-localised signal.
 ```bash
-python scripts/diagnostics/check_face_roi_selectivity.py
+python scripts/measure_identity_signal.py
 # or explicitly:
-python scripts/diagnostics/check_face_roi_selectivity.py \
-  --general-dir "./fairface + ffhq preds" --target-npz ./target_preds
+python scripts/measure_identity_signal.py \
+  --general-preds-dir "./fairface + ffhq preds" --target-preds-npz ./target_preds/mia.npz
 ```
 
 ### 3b. Brain Contrast Heatmap
 The same question as the selectivity table, but as a picture. Renders the **full signed contrast** (`target_mean − general_mean`) across all 20,484 vertices on the fsaverage pial surface, diverging RdBu_r centered at zero, so you can see whether the strongest contrast lands inside face-selective cortex or spills outside it. No new inference, it reuses the existing npz predictions.
 
-Three outline modes, each writing its own file into `--out-dir` (default `./brain_contrast`). The outline is purely visual, the underlying contrast is identical across all three.
+Three outline modes, each writing its own file into `--out-dir` (default `./analysis`). The outline is purely visual, the underlying contrast is identical across all three.
 
 | Command | Outline | Output |
 |---------|---------|--------|
@@ -146,9 +154,9 @@ Three outline modes, each writing its own file into `--out-dir` (default `./brai
 | `python scripts/brain_contrast_heatmap.py --include-secondary` | full face circuit (STS, ATL, TP, PREC, MPFC, PCC) | `all_visual.png` |
 | `python scripts/brain_contrast_heatmap.py --entire` | none, whole cortex | `entire_brain.png` |
 
-![OFA and FFA outlined](brain_contrast/ofa_ffa.png)
+![OFA and FFA outlined](analysis/ofa_ffa.png)
 
-It also drops the raw signed contrast vector (native fsaverage5, shape `(20484,)`) at `brain_contrast/contrast_native_fsaverage5.npy`, and prints mean `|contrast|` inside vs outside the outlined circuit so you get the number alongside the picture.
+It also drops the raw signed contrast vector (native fsaverage5, shape `(20484,)`) at `analysis/contrast_native_fsaverage5.npy`, and prints mean `|contrast|` inside vs outside the outlined circuit so you get the number alongside the picture.
 
 ### 4. Identity Abliteration (Surgery)
 Builds a cortical face mask (OFA+FFA by default; add `--include-secondary` for TP+ATL), collects per-layer vjepa2 activations from static repeated frames, computes PCA directions, applies surgical weight suppression, and exports an HF-format checkpoint for validation.
@@ -184,6 +192,19 @@ python scripts/viz.py
 
 A second, lighter-weight suppression path (`scripts/mia_suppress_readout_v2.py`, `scripts/atl_suppress_readout.py`) skips the multi-layer PCA surgery above and edits the model's final readout directly: a rank-16 low-rank residual `W = W0 + U @ V` (~66K trainable params vs. 42M in the full readout matrix) is trained to suppress one person's identity inside a chosen ROI while a two-term loss (`fit` inside the ROI, `anchor` everywhere else) holds the rest of the brain's predictions at baseline. `--split-mode face_top` always holds out the person's own highest-scoring photos for that ROI, not a random split, so the reported drop is never measured on images the objective was directly fit to.
 
+```mermaid
+flowchart TD
+    A["Locate frozen readout<br/>find_fmri_encoder() -> W0, b0"] --> B["Build ROI masks<br/>measure_identity_signal.build_masks()"]
+    B --> C["face_top split<br/>hold out the target's OWN hardest photos"]
+    C --> D["Train rank-16 residual U, V<br/>fit inside ROI + anchor everywhere else"]
+    D --> E{"--mask-to-target?"}
+    E -->|yes| F["Zero residual outside ROI by construction"]
+    E -->|no| G["Soft anchor loss only"]
+    F --> H["Mean + pattern-level verdict<br/>report() / pattern_stats()"]
+    G --> H
+    H --> I["Brain maps<br/>plot_suppression_brain_maps.py"]
+```
+
 Three targets were compared for Mia, Sins, and Michael Jackson, all with `--split-mode face_top`:
 
 | Condition | Script / flags | Targets |
@@ -204,18 +225,26 @@ Three targets were compared for Mia, Sins, and Michael Jackson, all with `--spli
 
 Suppressing one region alone gets the strongest drop in that region; suppressing both at once still erases identity cleanly in both, just split across a shared 16-dimensional edit budget rather than maxing out either target. No condition ever moved V1, auditory, or motor cortex — reproduced across all 3 people × 3 conditions.
 
+![Suppression strength by target](analysis/suppression_three_conditions.png)
+
+**Mean-collateral isn't enough on its own** — averaging over an ROI can hide a real pattern-level shift (`measure_identity_signal.py`'s founding premise). `pattern_stats()` checks the actual per-image ROI vector (cosine + relative L2, not its mean) for the region *not* being targeted. Every condition passes at `cos=1.00000, rel_L2=0.0000` — genuinely untouched, not just mean-zero. For `--target-roi both` this checks V1 (there's no separate face-pathway region left to watch once both ROIs are the target).
+
+**Free (soft-anchored) vs. architecturally masked** — `--mask-to-target` zeroes the residual's output columns outside the ROI by construction instead of just discouraging drift through the loss. Same erasure strength either way, within a percentage point every time, so the stronger guarantee is free:
+
+![Free vs architecturally masked](analysis/suppression_free_vs_masked.png)
+
 ### Brain maps
 
 Each map plots, per fsaverage5 vertex, the L2 norm of that vertex's column in the trained residual `U @ V` — i.e. how much the edit is *allowed* to move that vertex's prediction, independent of any one input image. For `--mask-to-target` runs this is exactly zero outside the targeted ROI by construction; for the free (non-architecturally-masked) OFA/FFA-only runs it is the same quantity, just without that hard guarantee. Regenerate with `python scripts/plot_suppression_brain_maps.py`.
 
 **Mia**
-![Mia brain maps](abliterated/brain_maps/mia_brain_maps.png)
+![Mia brain maps](analysis/identity_suppression_mia.png)
 
 **Sins**
-![Sins brain maps](abliterated/brain_maps/sins_brain_maps.png)
+![Sins brain maps](analysis/identity_suppression_sins.png)
 
 **Michael Jackson**
-![Michael Jackson brain maps](abliterated/brain_maps/michael_jackson_brain_maps.png)
+![Michael Jackson brain maps](analysis/identity_suppression_michael_jackson.png)
 
 ---
 
