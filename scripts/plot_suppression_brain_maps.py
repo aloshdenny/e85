@@ -32,10 +32,14 @@ from nilearn import plotting as nl_plotting
 
 import sys
 sys.path.append(str(Path(__file__).parent))
+from chunk_utils import load_npz, npz_exists
 from measure_identity_signal import build_masks
 
-OUT_DIR = Path("/Users/aoxo/vscode/e85/abliterated/brain_maps")
-ABL_DIR = Path("/Users/aoxo/vscode/e85/abliterated")
+# Repo-relative, resolved from this file's location, so the script runs from a
+# fresh clone on any machine rather than only from one developer's home dir.
+REPO = Path(__file__).resolve().parent.parent
+OUT_DIR = REPO / "abliterated" / "brain_maps"
+ABL_DIR = REPO / "abliterated"
 
 PEOPLE = {
     "Mia": {
@@ -58,7 +62,8 @@ CONDITIONS = ["OFA/FFA only", "vATL only", "OFA/FFA + vATL"]
 
 
 def edit_magnitude(npz_path):
-    d = np.load(npz_path, allow_pickle=True)
+    # chunk-aware: residual npz may be committed as _chunk_NNN parts
+    d = load_npz(npz_path)
     U, V = d["U"], d["V"]
     residual = U @ V  # (2048, 20484)
     return np.linalg.norm(residual, axis=0)  # (20484,) one value per vertex
@@ -75,7 +80,7 @@ def main():
     all_mags = []
     for person, conds in PEOPLE.items():
         for cond, path in conds.items():
-            if path.exists():
+            if npz_exists(path):
                 all_mags.append(edit_magnitude(path))
     vmax = float(np.percentile(np.concatenate(all_mags), 99.5))
     print(f"shared color scale: [0, {vmax:.4f}]")
@@ -95,7 +100,7 @@ def main():
     THRESH = 0.02
 
     for person, conds in PEOPLE.items():
-        missing = [c for c, p in conds.items() if not p.exists()]
+        missing = [c for c, p in conds.items() if not npz_exists(p)]
         if missing:
             print(f"[skip incomplete] {person}: missing {missing}")
             continue

@@ -36,7 +36,7 @@ from nilearn import datasets as nl_datasets
 from nilearn import plotting as nl_plotting
 
 sys.path.append(str(Path(__file__).parent))
-from chunk_utils import load_npz, preds_as_image_vectors, discover_npz
+from chunk_utils import load_npz, npz_exists, preds_as_image_vectors, discover_npz
 from measure_identity_signal import build_masks
 
 ABL = Path("abliterated")
@@ -77,7 +77,9 @@ def recover_X(base, W0, b0, label):
 
 
 def apply_patch(X, W0, b0, npz_path):
-    d = np.load(npz_path, allow_pickle=True)
+    # load_npz, not np.load: these artifacts may ship as _chunk_NNN parts, and a
+    # raw np.load silently fails to find a chunked file on a fresh clone
+    d = load_npz(npz_path)
     return X @ (W0 + d["U"] @ d["V"]) + b0
 
 
@@ -105,10 +107,10 @@ def main():
     # --- each target ---------------------------------------------------------
     for person in ("Mia", "Sins", "Michael"):
         if person == "Michael":
-            if not MJ_BOTTLENECK.exists():
+            if not npz_exists(MJ_BOTTLENECK):
                 print("Michael: no bottleneck yet (run scripts/modal_mj_bottleneck.py) -- skipping")
                 continue
-            d = np.load(MJ_BOTTLENECK, allow_pickle=True)
+            d = load_npz(MJ_BOTTLENECK)
             X = d["X"]
             base = X @ W0 + b0
         else:

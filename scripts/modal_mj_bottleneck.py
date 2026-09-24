@@ -71,9 +71,14 @@ def capture_mj():
 
 @app.local_entrypoint()
 def main():
+    import sys
     import numpy as np
+    sys.path.append("scripts")
+    from chunk_utils import save_npz
     out = capture_mj.remote()
-    np.savez("abliterated/mj_bottleneck.npz",
+    # save_npz, not np.savez: this file is ~169MB, over GitHub's 100MB limit, so
+    # it must ship as _chunk_NNN parts for the repo to stay clone-and-run
+    save_npz("abliterated/mj_bottleneck.npz",
              X=out["X"], names=np.array(out["names"]),
              W0=out["W0"], b0=out["b0"])
     print(f"saved abliterated/mj_bottleneck.npz  X={out['X'].shape}")

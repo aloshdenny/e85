@@ -22,10 +22,10 @@ import numpy as np
 from insightface.app import FaceAnalysis
 from PIL import Image
 
-SRC_DIRS = [Path("/Users/aoxo/Downloads/mj"), Path("/Users/aoxo/Downloads/mj2")]
-OUT_DIR = Path("/Users/aoxo/vscode/e85/target/mj_crops")
+SRC_DIRS = [(Path.home() / "Downloads/mj".lstrip("/")), (Path.home() / "Downloads/mj2".lstrip("/"))]
+OUT_DIR = (Path(__file__).resolve().parent.parent / "/target/mj_crops".lstrip("/"))
 REJECT_DIR = OUT_DIR / "_rejected_other_faces"
-ZIP_OUT = Path("/Users/aoxo/vscode/e85/target/mj.zip")
+ZIP_OUT = (Path(__file__).resolve().parent.parent / "/target/mj.zip".lstrip("/"))
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".bmp", ".heic"}
 OUT_SIZE = 256
 MARGIN = 0.70

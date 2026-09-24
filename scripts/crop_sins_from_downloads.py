@@ -23,11 +23,11 @@ import numpy as np
 from insightface.app import FaceAnalysis
 from PIL import Image
 
-DOWNLOADS = Path("/Users/aoxo/Downloads")
+DOWNLOADS = (Path.home() / "Downloads".lstrip("/"))
 SCREENSHOTS = DOWNLOADS / "Screenshots"
-OUT_DIR = Path("/Users/aoxo/vscode/e85/target/sins_crops")
+OUT_DIR = (Path(__file__).resolve().parent.parent / "/target/sins_crops".lstrip("/"))
 REJECT_DIR = OUT_DIR / "_rejected_other_faces"
-ZIP_OUT = Path("/Users/aoxo/vscode/e85/target/sins.zip")
+ZIP_OUT = (Path(__file__).resolve().parent.parent / "/target/sins.zip".lstrip("/"))
 EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".bmp", ".heic"}
 TODAY = datetime.date(2026, 8, 29)
 OUT_SIZE = 256

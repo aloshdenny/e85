@@ -232,6 +232,23 @@ The fused `fairface + ffhq.zip` is 1.0GB, well over the file limit, so it ships 
 ### Abliterated HF checkpoint
 Surgery exports `abliterated/vjepa2_hf_checkpoint/` as sharded `.safetensors` (default `--max-shard-size 20MB`) so individual shards stay under the file limit. Push large trees in separate size-capped commits (subfolder-isolated batches under ~1.5 GiB) to stay under the pack limit.
 
+### Reproducibility check
+
+Chunked artifacts do **not** exist under their logical name in a fresh clone --
+only the `_chunk_NNN` parts do. So any code touching them must go through
+`chunk_utils` (`load_npz` / `npz_exists` / `save_npz` / `load_chunked` /
+`save_chunked` / `ensure_fused_zip`), never a bare `np.load` or `path.exists()`,
+which would fail or silently skip the data.
+
+`scripts/verify_reproducible.py` enforces this: it checks nothing committed
+exceeds GitHub's 100MB limit, that every chunk set actually re-fuses and loads,
+and that no script reaches for a chunked artifact with a raw loader. Run it
+before pushing new artifacts.
+
+```bash
+python scripts/verify_reproducible.py   # exit 0 = a fresh clone will run
+```
+
 ### Legacy `.pt` chunk helpers
 `chunk_utils.save_chunked` / `load_chunked` still support `<25MB` binary splits of PyTorch state dicts (same pattern as janice-stfu) when needed.
 

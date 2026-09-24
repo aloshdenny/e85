@@ -18,9 +18,9 @@ import numpy as np
 from insightface.app import FaceAnalysis
 from PIL import Image
 
-DOWNLOADS = Path("/Users/aoxo/Downloads")
-GALLERY_ZIP = Path("/Users/aoxo/vscode/e85/target/mia.zip")
-OUT_DIR = Path("/Users/aoxo/vscode/e85/target/mia_in_the_wild")
+DOWNLOADS = (Path.home() / "Downloads".lstrip("/"))
+GALLERY_ZIP = (Path(__file__).resolve().parent.parent / "/target/mia.zip".lstrip("/"))
+OUT_DIR = (Path(__file__).resolve().parent.parent / "/target/mia_in_the_wild".lstrip("/"))
 REJECT_DIR = OUT_DIR / "_rejected_other_faces"
 
 TODAY_NAMES = [
