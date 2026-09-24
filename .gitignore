@@ -10,3 +10,8 @@ ffhq_preds/
 
 # Fused locally, pushed as chunk_NNN parts.
 fairface + ffhq/fairface + ffhq.zip
+
+# Bottleneck caches ship as chunk_NNN parts (>95MB); the fused files are
+# rebuilt on demand by chunk_utils.fuse_chunks_to_file and never committed.
+abliterated/mj_bottleneck.npz
+abliterated/v2_bottlenecks_tinker_e.npz

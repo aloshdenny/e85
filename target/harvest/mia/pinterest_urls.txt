@@ -1,0 +1,3 @@
+# Pinterest / gallery-dl board URLs (one per line). Example:
+# https://www.pinterest.com/search/pins/?q=mia%20khalifa
+# https://www.pinterest.com/someuser/mia-board/

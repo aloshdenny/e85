@@ -1,0 +1,28 @@
+{
+  "in": 751,
+  "kept": 600,
+  "dropped": 151,
+  "drop_reasons": {
+    "no_face": 102,
+    "too_smooth(lap=9.0)": 1,
+    "too_smooth(lap=17.4)": 1,
+    "too_smooth(lap=26.8)": 1,
+    "too_smooth(lap=26.4)": 1,
+    "too_smooth(lap=30.7)": 1,
+    "too_smooth(lap=12.5)": 1,
+    "too_smooth(lap=19.8)": 1,
+    "too_smooth(lap=12.8)": 1,
+    "too_smooth(lap=9.8)": 1,
+    "too_smooth(lap=25.5)": 2,
+    "too_smooth(lap=29.6)": 1,
+    "too_smooth(lap=28.4)": 1,
+    "too_smooth(lap=3.8)": 1,
+    "junk_url": 26,
+    "low_sim(0.42)": 2,
+    "low_sim(0.39)": 2,
+    "low_sim(-0.01)": 1,
+    "too_smooth(lap=34.7)": 2,
+    "low_sim(0.41)": 1,
+    "too_smooth(lap=24.9)": 1
+  }
+}

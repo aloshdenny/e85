@@ -1,0 +1,26 @@
+{
+  "baseline": {
+    "file": "72289.jpg",
+    "mean": 0.003638668218627572,
+    "spike": 0.07787155359983444,
+    "zone": "n/a"
+  },
+  "A": {
+    "file": "99426.png",
+    "mean": 0.1506200134754181,
+    "spike": 0.17006364464759827,
+    "zone": "OFA:S_oc_middle_and_Lunatus"
+  },
+  "B": {
+    "file": "68591.jpg",
+    "mean": 0.07615314424037933,
+    "spike": 0.16251656413078308,
+    "zone": "FFA:G_oc-temp_lat-fusifor"
+  },
+  "C": {
+    "file": "14037.jpg",
+    "mean": 0.0834580585360527,
+    "spike": 0.1439482867717743,
+    "zone": "OFA:G_and_S_occipital_inf"
+  }
+}

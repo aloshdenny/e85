@@ -1,0 +1,8 @@
+# Optional deps for scripts/harvest_target_faces.py (run on Mac, not 4090).
+# pip install -r requirements-harvest.txt
+ddgs>=9.0.0
+icrawler>=0.6.10
+clip-retrieval>=2.37.0
+imagehash>=4.3.1
+Pillow>=10.0.0
+requests>=2.31.0

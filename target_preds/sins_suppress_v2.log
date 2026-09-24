@@ -1,0 +1,270 @@
+Sins: 30 train, 8 holdout from target/sins.zip
+reusing FairFace cache /home/research/e85_scratch/v2_bottlenecks.npz  gen (500, 2048)
+Loading TribeModel for target bottlenecks...
+Capturing bottlenecks: 30 train...
+  0%|          | 0/16 [00:00<?, ?it/s]
+Loading weights:   0%|          | 0/843 [00:00<?, ?it/s][A
+Loading weights:  12%|█▏        | 98/843 [00:00<00:00, 968.89it/s][A
+Loading weights:  23%|██▎       | 195/843 [00:00<00:00, 882.28it/s][A
+Loading weights:  34%|███▎      | 284/843 [00:00<00:00, 879.27it/s][A
+Loading weights:  45%|████▍     | 376/843 [00:00<00:00, 893.00it/s][ALoading weights: 100%|██████████| 843/843 [00:00<00:00, 1850.57it/s]
+
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:01<00:01,  1.19s/it][A
+Encoding video: 100%|██████████| 2/2 [00:01<00:00,  1.35it/s][AEncoding video: 100%|██████████| 2/2 [00:01<00:00,  1.23it/s]
+  6%|▋         | 1/16 [00:06<01:44,  6.97s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.58it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.53it/s]
+ 12%|█▎        | 2/16 [00:07<00:46,  3.34s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s]
+ 19%|█▉        | 3/16 [00:08<00:28,  2.18s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.38it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.43it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.42it/s]
+ 25%|██▌       | 4/16 [00:09<00:19,  1.65s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s]
+ 31%|███▏      | 5/16 [00:10<00:14,  1.35s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.47it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.48it/s]
+ 38%|███▊      | 6/16 [00:11<00:11,  1.17s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.44it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.47it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.47it/s]
+ 44%|████▍     | 7/16 [00:11<00:09,  1.05s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.46it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.48it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.48it/s]
+ 50%|█████     | 8/16 [00:12<00:07,  1.02it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.49it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.49it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.49it/s]
+ 56%|█████▋    | 9/16 [00:13<00:06,  1.08it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.53it/s]
+ 62%|██████▎   | 10/16 [00:14<00:05,  1.12it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.48it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.49it/s]
+ 69%|██████▉   | 11/16 [00:15<00:04,  1.15it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.57it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s]
+ 75%|███████▌  | 12/16 [00:15<00:03,  1.18it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.55it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s]
+ 81%|████████▏ | 13/16 [00:16<00:02,  1.20it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.42it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.45it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.44it/s]
+ 88%|████████▊ | 14/16 [00:17<00:01,  1.20it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.48it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.49it/s]
+ 94%|█████████▍| 15/16 [00:18<00:00,  1.21it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.53it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.41it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.43it/s]
+100%|██████████| 16/16 [00:19<00:00,  1.20it/s]100%|██████████| 16/16 [00:19<00:00,  1.20s/it]
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:00<00:00,  2.45it/s]100%|██████████| 2/2 [00:00<00:00,  4.44it/s]
+  bottleneck ...16/30
+  0%|          | 0/14 [00:00<?, ?it/s]
+Loading weights:   0%|          | 0/843 [00:00<?, ?it/s][A
+Loading weights:  15%|█▌        | 128/843 [00:00<00:00, 1266.82it/s][A
+Loading weights:  30%|███       | 255/843 [00:00<00:00, 1233.63it/s][A
+Loading weights:  45%|████▌     | 382/843 [00:00<00:00, 1247.47it/s][ALoading weights: 100%|██████████| 843/843 [00:00<00:00, 2620.00it/s]
+
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  1.77it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.10it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.04it/s]
+  7%|▋         | 1/14 [00:02<00:35,  2.73s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.52it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.43it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.44it/s]
+ 14%|█▍        | 2/14 [00:03<00:19,  1.61s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.57it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.53it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.53it/s]
+ 21%|██▏       | 3/14 [00:04<00:13,  1.24s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.57it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.48it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.49it/s]
+ 29%|██▊       | 4/14 [00:05<00:10,  1.08s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.50it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s]
+ 36%|███▌      | 5/14 [00:05<00:08,  1.02it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.57it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s]
+ 43%|████▎     | 6/14 [00:06<00:07,  1.08it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.44it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.44it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.44it/s]
+ 50%|█████     | 7/14 [00:07<00:06,  1.12it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.50it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s]
+ 57%|█████▋    | 8/14 [00:08<00:05,  1.16it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.52it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.43it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.45it/s]
+ 64%|██████▍   | 9/14 [00:09<00:04,  1.17it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s]
+ 71%|███████▏  | 10/14 [00:10<00:03,  1.19it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.54it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.49it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.50it/s]
+ 79%|███████▊  | 11/14 [00:10<00:02,  1.20it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.51it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.45it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.46it/s]
+ 86%|████████▌ | 12/14 [00:11<00:01,  1.21it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s]
+ 93%|█████████▎| 13/14 [00:12<00:00,  1.22it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.55it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.48it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.49it/s]
+100%|██████████| 14/14 [00:13<00:00,  1.22it/s]100%|██████████| 14/14 [00:13<00:00,  1.05it/s]
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:00<00:00,  3.03it/s]100%|██████████| 2/2 [00:00<00:00,  5.37it/s]
+  bottleneck ...30/30
+Capturing bottlenecks: 8 holdout...
+  0%|          | 0/8 [00:00<?, ?it/s]
+Loading weights:   0%|          | 0/843 [00:00<?, ?it/s][A
+Loading weights:  16%|█▌        | 133/843 [00:00<00:00, 1327.67it/s][A
+Loading weights:  32%|███▏      | 266/843 [00:00<00:00, 1249.63it/s][A
+Loading weights:  47%|████▋     | 392/843 [00:00<00:00, 1238.83it/s][ALoading weights: 100%|██████████| 843/843 [00:00<00:00, 2604.55it/s]
+
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  1.73it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.11it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.05it/s]
+ 12%|█▎        | 1/8 [00:02<00:18,  2.69s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.54it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.50it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s]
+ 25%|██▌       | 2/8 [00:03<00:09,  1.58s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.54it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s]
+ 38%|███▊      | 3/8 [00:04<00:06,  1.23s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.56it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.52it/s]
+ 50%|█████     | 4/8 [00:05<00:04,  1.06s/it]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.43it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.46it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.46it/s]
+ 62%|██████▎   | 5/8 [00:05<00:02,  1.02it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.41it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.43it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.42it/s]
+ 75%|███████▌  | 6/8 [00:06<00:01,  1.08it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.53it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.51it/s]
+ 88%|████████▊ | 7/8 [00:07<00:00,  1.12it/s]
+Encoding video:   0%|          | 0/2 [00:00<?, ?it/s][A
+Encoding video:  50%|█████     | 1/2 [00:00<00:00,  2.43it/s][A
+Encoding video: 100%|██████████| 2/2 [00:00<00:00,  2.48it/s][AEncoding video: 100%|██████████| 2/2 [00:00<00:00,  2.47it/s]
+100%|██████████| 8/8 [00:08<00:00,  1.15it/s]100%|██████████| 8/8 [00:08<00:00,  1.05s/it]
+  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [00:00<00:00,  3.16it/s]100%|██████████| 1/1 [00:00<00:00,  2.90it/s]
+  bottleneck ...8/8
+[fetch_atlas_surf_destrieux] Dataset found in 
+/home/research/nilearn_data/destrieux_surface
+
+TRIBE bottleneck similarity to Sins centroid (general faces)
+  max=+0.983  p90=+0.962  median=+0.928  min=+0.690
+  splits: neighbor-holdout 25  random-holdout 50  train-anchor 425
+
+FACE means (frozen readout)  -> PULL THIS IDENTITY DOWN by 0.015 (not elevated vs FairFace; still a selective-control test)
+  suppress-to               +0.04487
+  train-anchor FairFace     +0.06948
+  train Sins                +0.05987
+  holdout Sins              +0.06701
+  TRIBE neighbors           +0.07788  (sim +0.973..+0.983)
+  random FairFace hold      +0.07241
+
+Training rank-16  lam_sup=5.0  lam_anchor=3.0  lam_anchor_face=20.0
+  ep   0  loss=0.00382  studio FACE=+0.05987  anchor FACE=+0.06948
+  ep  50  loss=0.00281  studio FACE=+0.05251  anchor FACE=+0.07139
+  ep 100  loss=0.00223  studio FACE=+0.04666  anchor FACE=+0.06861
+  ep 150  loss=0.00188  studio FACE=+0.04720  anchor FACE=+0.06888
+  ep 200  loss=0.00148  studio FACE=+0.04673  anchor FACE=+0.06902
+  ep 250  loss=0.00122  studio FACE=+0.04641  anchor FACE=+0.06910
+  ep 300  loss=0.00107  studio FACE=+0.04638  anchor FACE=+0.06911
+  ep 350  loss=0.00096  studio FACE=+0.04634  anchor FACE=+0.06912
+  ep 399  loss=0.00341  studio FACE=+0.04827  anchor FACE=+0.06174
+
+SINS TRAIN (suppress)  n=30
+           ROI   baseline  finetuned      delta
+------------------------------------------------
+ FACE(OFA+FFA)   +0.05987   +0.04684   -0.01303
+           OFA   +0.05641   +0.04337   -0.01303
+           FFA   +0.06846   +0.05543   -0.01303
+            V1   -0.07543   -0.07543   +0.00000
+           AUD   +0.03809   +0.03809   +0.00000
+         MOTOR   +0.00880   +0.00880   -0.00000
+
+SINS HOLDOUT  n=8
+           ROI   baseline  finetuned      delta
+------------------------------------------------
+ FACE(OFA+FFA)   +0.06701   +0.05046   -0.01655
+           OFA   +0.06359   +0.04704   -0.01655
+           FFA   +0.07550   +0.05894   -0.01655
+            V1   -0.07409   -0.07409   +0.00000
+           AUD   +0.03272   +0.03272   +0.00000
+         MOTOR   +0.00503   +0.00503   +0.00000
+
+TRIBE-NEIGHBOR HOLDOUT (never trained)  n=25
+           ROI   baseline  finetuned      delta
+------------------------------------------------
+ FACE(OFA+FFA)   +0.07788   +0.07652   -0.00136
+           OFA   +0.07153   +0.07018   -0.00136
+           FFA   +0.09362   +0.09226   -0.00136
+            V1   -0.06024   -0.06024   +0.00000
+           AUD   +0.02896   +0.02896   -0.00000
+         MOTOR   +0.00916   +0.00916   +0.00000
+
+RANDOM FAIRFACE HOLDOUT (never trained)  n=50
+           ROI   baseline  finetuned      delta
+------------------------------------------------
+ FACE(OFA+FFA)   +0.07241   +0.07347   +0.00107
+           OFA   +0.06817   +0.06924   +0.00107
+           FFA   +0.08291   +0.08398   +0.00107
+            V1   -0.05658   -0.05658   +0.00000
+           AUD   +0.03384   +0.03384   -0.00000
+         MOTOR   +0.01891   +0.01891   +0.00000
+
+FAIRFACE TRAIN ANCHOR  n=425
+           ROI   baseline  finetuned      delta
+------------------------------------------------
+ FACE(OFA+FFA)   +0.06948   +0.06974   +0.00026
+           OFA   +0.06392   +0.06417   +0.00026
+           FFA   +0.08328   +0.08354   +0.00026
+            V1   -0.05889   -0.05889   +0.00000
+           AUD   +0.03330   +0.03330   -0.00000
+         MOTOR   +0.01970   +0.01970   +0.00000
+
+================================================================
+V2 VERDICT
+  Sins holdout FACE drop +0.01655  (75% of intended move)
+  random FairFace drop      -0.00107  (must stay ~0)
+  TRIBE-neighbor drop       +0.00136
+  OK: identity-selective. Holdout Sins moved, random faces did not.
+================================================================
+
+Saved -> abliterated/sins_suppress_readout_v2.npz
+Saved sins.npz (2.9 MB)
+Saved baseline preds -> target_preds/sins.npz  (38, 20484)
+DONE sins_suppress_v2

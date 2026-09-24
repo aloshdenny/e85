@@ -11,6 +11,7 @@ python scripts/mia_suppress_readout_v2.py \
   --cache-folder /home/research/.cache/huggingface \
   --general-zip /home/research/e85/data/fairface_ffhq.zip \
   --bottleneck-cache /home/research/e85_scratch/v2_bottlenecks.npz \
+  --min-drop 0.015 \
   --out abliterated/sins_suppress_readout_v2.npz \
   --save-preds target_preds/sins.npz
 echo "DONE sins_suppress_v2"

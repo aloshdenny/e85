@@ -1,0 +1,23 @@
+/Users/aoxo/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/aoxo/Library/Python/3.9/lib/python/site-packages/insightface/utils/transform.py:68: FutureWarning: `rcond` parameter will change to the default of machine precision times ``max(M, N)`` where M and N are the input matrix dimensions.
+To use the future default and silence this warning we advise to pass `rcond=None`, to keep using the old, explicitly pass `rcond=-1`.
+  P = np.linalg.lstsq(X_homo, Y)[0].T # Affine matrix. 3 x 4
+Applied providers: ['CPUExecutionProvider'], with options: {'CPUExecutionProvider': {}}
+find model: /Users/aoxo/.insightface/models/buffalo_l/1k3d68.onnx landmark_3d_68 ['None', 3, 192, 192] 0.0 1.0
+Applied providers: ['CPUExecutionProvider'], with options: {'CPUExecutionProvider': {}}
+find model: /Users/aoxo/.insightface/models/buffalo_l/2d106det.onnx landmark_2d_106 ['None', 3, 192, 192] 0.0 1.0
+Applied providers: ['CPUExecutionProvider'], with options: {'CPUExecutionProvider': {}}
+find model: /Users/aoxo/.insightface/models/buffalo_l/det_10g.onnx detection [1, 3, '?', '?'] 127.5 128.0
+Applied providers: ['CPUExecutionProvider'], with options: {'CPUExecutionProvider': {}}
+find model: /Users/aoxo/.insightface/models/buffalo_l/genderage.onnx genderage ['None', 3, 96, 96] 0.0 1.0
+Applied providers: ['CPUExecutionProvider'], with options: {'CPUExecutionProvider': {}}
+find model: /Users/aoxo/.insightface/models/buffalo_l/w600k_r50.onnx recognition ['None', 3, 112, 112] 127.5 127.5
+set det-size: (640, 640)
+centroid from 612 reference faces
+
+mia.zip  in=751  kept=600  dropped=151
+drop reasons: {'no_face': 102, 'too_smooth(lap=9.0)': 1, 'too_smooth(lap=17.4)': 1, 'too_smooth(lap=26.8)': 1, 'too_smooth(lap=26.4)': 1, 'too_smooth(lap=30.7)': 1, 'too_smooth(lap=12.5)': 1, 'too_smooth(lap=19.8)': 1, 'too_smooth(lap=12.8)': 1, 'too_smooth(lap=9.8)': 1, 'too_smooth(lap=25.5)': 2, 'too_smooth(lap=29.6)': 1, 'too_smooth(lap=28.4)': 1, 'too_smooth(lap=3.8)': 1, 'junk_url': 26, 'low_sim(0.42)': 2, 'low_sim(0.39)': 2, 'low_sim(-0.01)': 1, 'too_smooth(lap=34.7)': 2, 'low_sim(0.41)': 1, 'too_smooth(lap=24.9)': 1}
+rebuilt /Users/aoxo/vscode/e85/target/mia.zip  (600 images)  backup -> mia.zip.bak_pre_clean
+quarantine -> /Users/aoxo/vscode/e85/target/harvest/mia/quarantine
+report -> /Users/aoxo/vscode/e85/target/harvest/mia/clean_report.json

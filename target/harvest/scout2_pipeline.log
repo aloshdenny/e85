@@ -1,0 +1,12 @@
+Scout2 pipeline start 2026-08-29T16:56:38Z
+======== SCOUT2 mia 16:56:38 ========
+/Users/aoxo/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+query-set scout2: 20 DDG/Bing + 6 LAION
+mia: zip=451  harvest_kept=250  target=1000  dedup_seeded=1058
+/Users/aoxo/Library/Python/3.9/lib/python/site-packages/insightface/utils/transform.py:68: FutureWarning: `rcond` parameter will change to the default of machine precision times ``max(M, N)`` where M and N are the input matrix dimensions.
+To use the future default and silence this warning we advise to pass `rcond=None`, to keep using the old, explicitly pass `rcond=-1`.
+  P = np.linalg.lstsq(X_homo, Y)[0].T # Affine matrix. 3 x 4
+waiting for Mia scout2...
+  mia scout2 running kept=0
+0

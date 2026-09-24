@@ -1,0 +1,2 @@
+# Pinterest / gallery-dl board URLs (one per line). Example:
+# https://www.pinterest.com/search/pins/?q=johnny%20sins

@@ -1,0 +1,19 @@
+=== log tail ===
+
+GENERAL ANCHOR (n=120)
+           ROI   baseline  finetuned      delta
+------------------------------------------------
+ FACE(OFA+FFA)   +0.06323   +0.06065   -0.00258
+           OFA   +0.06728   +0.06471   -0.00258
+           FFA   +0.05317   +0.05059   -0.00258
+            V1   -0.05728   -0.05728   +0.00000
+           AUD   +0.04177   +0.04177   +0.00000
+         MOTOR   -0.00115   -0.00115   +0.00000
+
+Holdout FACE moved +0.01318 toward general (108% of gap closed)
+
+Saved -> abliterated/mia_suppress_readout.npz
+DONE mia_suppress_readout
+=== procs ===
+research   81534  0.0  0.0   4752  3488 pts/2    Ss+  04:53   0:00 bash /mnt/c/Users/research/w4090/poll_mia_suppress.sh
+DONE
