@@ -24,7 +24,8 @@ assumed. Michael has no stored baseline, so his X comes from one Modal GPU
 pass (scripts/modal_mj_bottleneck.py).
 
 Usage:
-  python scripts/plot_postop_activity.py --ckpt /path/to/best.ckpt
+  python scripts/plot_postop_activity.py                  # fetches the checkpoint
+  python scripts/plot_postop_activity.py --ckpt best.ckpt # or point at a local copy
 """
 import sys, argparse, random
 from pathlib import Path
@@ -39,8 +40,10 @@ sys.path.append(str(Path(__file__).parent))
 from chunk_utils import load_npz, npz_exists, preds_as_image_vectors, discover_npz
 from measure_identity_signal import build_masks
 
-ABL = Path("abliterated")
-OUT = Path("analysis/postop_activity.png")
+# Repo-relative so the script runs from a fresh clone regardless of cwd.
+REPO = Path(__file__).resolve().parent.parent
+ABL = REPO / "abliterated"
+OUT = REPO / "analysis" / "postop_activity.png"
 HEMI = "right"          # face processing is right-lateralised; one hemi keeps it readable
 VIEW = "ventral"
 
@@ -49,8 +52,33 @@ PATCH = {
     "Sins":    ABL / "sins_suppress_readout_v2_face_top_lam15.npz",
     "Michael": ABL / "mj_suppress_readout_v2_face_top_lam15.npz",
 }
-BASELINE_PREDS = {"Mia": "target_preds/mia.npz", "Sins": "target_preds/sins.npz"}
+BASELINE_PREDS = {"Mia": REPO / "target_preds" / "mia.npz",
+                  "Sins": REPO / "target_preds" / "sins.npz"}
 MJ_BOTTLENECK = ABL / "mj_bottleneck.npz"
+
+
+TRIBE_REPO = "facebook/tribev2"
+TRIBE_CKPT = "best.ckpt"
+
+
+def resolve_ckpt(explicit=None):
+    """Return a path to TRIBE's checkpoint, downloading it if needed.
+
+    Only the readout matrix is used here, but it lives inside the 709MB
+    checkpoint. Requiring the caller to have fetched it by hand made this
+    script un-runnable from a fresh clone, so fetch it on demand and let
+    huggingface_hub cache it for subsequent runs.
+    """
+    if explicit:
+        return Path(explicit)
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        raise SystemExit(
+            "huggingface_hub is required to fetch the checkpoint automatically.\n"
+            "  pip install huggingface_hub   (or pass --ckpt /path/to/best.ckpt)")
+    print(f"fetching {TRIBE_REPO}/{TRIBE_CKPT} (709MB, cached after first run)...")
+    return Path(hf_hub_download(repo_id=TRIBE_REPO, filename=TRIBE_CKPT))
 
 
 def load_readout(ckpt_path):
@@ -85,13 +113,15 @@ def apply_patch(X, W0, b0, npz_path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", required=True)
+    ap.add_argument("--ckpt", default=None,
+                    help="Path to TRIBE's best.ckpt. Omit to download it from "
+                         "the HuggingFace Hub and reuse the cached copy.")
     ap.add_argument("--n-general", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
     face = build_masks()["FACE(OFA+FFA)"]
-    W0, b0 = load_readout(args.ckpt)
+    W0, b0 = load_readout(resolve_ckpt(args.ckpt))
 
     cols = []   # (title, before_vec, after_vec, n)
 

@@ -232,6 +232,22 @@ The fused `fairface + ffhq.zip` is 1.0GB, well over the file limit, so it ships 
 ### Abliterated HF checkpoint
 Surgery exports `abliterated/vjepa2_hf_checkpoint/` as sharded `.safetensors` (default `--max-shard-size 20MB`) so individual shards stay under the file limit. Push large trees in separate size-capped commits (subfolder-isolated batches under ~1.5 GiB) to stay under the pack limit.
 
+### Running the figure scripts
+
+The post-surgery activity figure needs TRIBE's readout matrix, which lives inside
+the 709MB `best.ckpt`. The script fetches it from the HuggingFace Hub on first run
+and reuses the cached copy, so no manual download step:
+
+```bash
+python scripts/plot_postop_activity.py                    # fetches best.ckpt
+python scripts/plot_postop_activity.py --ckpt best.ckpt   # or use a local copy
+python scripts/plot_suppression_brain_maps.py
+python scripts/plot_holdout_split.py
+```
+
+All paths in these scripts resolve relative to the repo, so they run from any
+working directory on any machine.
+
 ### Reproducibility check
 
 Chunked artifacts do **not** exist under their logical name in a fresh clone --

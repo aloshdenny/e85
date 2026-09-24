@@ -1,3 +1,5 @@
+import os
+import shutil
 """
 nod_fetch_and_resample.py
 
@@ -41,7 +43,9 @@ import numpy as np
 import nibabel as nib
 
 BASE = "https://s3.amazonaws.com/openneuro.org"
-WB = "/home/research/miniconda3/envs/tribev2/bin/wb_command"
+# Discover wb_command on PATH (conda-forge installs it there) rather than
+# hardcoding one machine's conda prefix; override with WB_COMMAND if needed.
+WB = os.environ.get("WB_COMMAND") or shutil.which("wb_command") or "wb_command"
 
 
 def s3_get(key: str, dst: Path, quiet=True):

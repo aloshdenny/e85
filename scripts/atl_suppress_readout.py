@@ -37,6 +37,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import zipfile
 from pathlib import Path
@@ -116,9 +117,9 @@ def main():
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--cache-folder", type=Path,
-                    default=Path("/home/research/.cache/huggingface"))
+                    default=Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")))
     ap.add_argument("--bottleneck-cache", type=Path,
-                    default=Path("/home/research/e85_scratch/v2_bottlenecks.npz"))
+                    default=Path(__file__).resolve().parent.parent / "cache" / "v2_bottlenecks.npz")
     ap.add_argument("--out", type=Path,
                     default=Path("./abliterated/atl_suppress_readout.npz"))
     ap.add_argument("--target-roi", choices=["atl", "face", "both"], default="atl",
