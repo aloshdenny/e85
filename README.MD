@@ -10,6 +10,10 @@ Follow these steps to set up the project locally using your existing `tribev2` C
 
 ```bash
 # 1. Clone the repository
+#    NOTE: this repo is ~11GB (101,698 prediction npz files, the chunked image
+#    galleries and bottleneck caches), so a full clone is slow. For code only:
+#      git clone --filter=blob:none https://github.com/aloshdenny/e85.git
+#    git then fetches large blobs lazily, only when something actually reads them.
 git clone https://github.com/aloshdenny/e85.git
 cd e85
 
