@@ -29,7 +29,7 @@ REPO = Path(__file__).resolve().parent.parent
 GITHUB_HARD_LIMIT = 100 * 1024 * 1024
 CHUNK_RE = re.compile(r"^(.*)_chunk_(\d{3})(\..+)$")
 
-failures, warnings = [], []
+failures, warnings, skipped = [], [], []
 
 
 def tracked_files():
@@ -57,6 +57,12 @@ def check_chunk_sets(files):
     for base in sorted(bases):
         rel = base.relative_to(REPO)
         parts = get_chunk_paths(base)
+        if not parts:
+            # Tracked but not checked out: normal in a partial/sparse clone, which
+            # is the recommended way to get just the code. Not a defect -- only an
+            # artifact that IS present and fails to reconstruct is a real failure.
+            skipped.append(str(rel))
+            continue
         if base.exists():
             warnings.append(f"{rel}: fused file present locally -- gitignore it so "
                             f"the chunked path is what actually gets exercised")
@@ -71,6 +77,11 @@ def check_chunk_sets(files):
                 tmp.unlink(missing_ok=True)
         except Exception as e:
             failures.append(f"{rel}: chunk set does not reconstruct ({e})")
+    if skipped:
+        print(f"    {len(skipped)} artifact(s) tracked but not checked out "
+              f"(partial/sparse clone) -- skipped, not a failure:")
+        for sk in skipped:
+            print(f"      - {sk}")
 
 
 def check_loaders(files):
@@ -146,7 +157,11 @@ def main():
     if failures:
         print(f"\nNOT REPRODUCIBLE: {len(failures)} blocking issue(s)")
         return 1
-    print(f"\nREPRODUCIBLE: chunk sets reconstruct, nothing exceeds the size limit"
+    tail = ""
+    if skipped:
+        tail = (f"; {len(skipped)} artifact(s) not checked out in this clone, "
+                f"run `git sparse-checkout disable` to fetch and verify them")
+    print(f"\nREPRODUCIBLE: chunk sets reconstruct, nothing exceeds the size limit{tail}"
           f"{', ' + str(len(warnings)) + ' warning(s)' if warnings else ''}")
     return 0
 

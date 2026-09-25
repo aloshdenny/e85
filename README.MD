@@ -6,23 +6,45 @@ A fully data-driven pipeline for surgeon-like **face identity suppression** insi
 
 ## 🚀 Setup & Installation
 
-Follow these steps to set up the project locally using your existing `tribev2` Conda environment:
+This repo is **~11GB**: 101,698 prediction npz files plus chunked image galleries
+and bottleneck caches. How you clone depends on what you need.
 
+**Just the code** (measured: **95 seconds, 14MB on disk**):
 ```bash
-# 1. Clone the repository
-#    NOTE: this repo is ~11GB (101,698 prediction npz files, the chunked image
-#    galleries and bottleneck caches), so a full clone is slow. For code only:
-#      git clone --filter=blob:none https://github.com/aloshdenny/e85.git
-#    git then fetches large blobs lazily, only when something actually reads them.
-git clone https://github.com/aloshdenny/e85.git
+git clone --filter=blob:none --no-checkout --depth 1 https://github.com/aloshdenny/e85.git
 cd e85
-
-# 2. Activate your tribev2 conda environment
-conda activate tribev2
-
-# 3. Install required dependencies
-pip install -r requirements.txt
+git sparse-checkout set scripts README.MD requirements.txt
+git checkout main
 ```
+`--no-checkout` matters. `--filter=blob:none` on its own still checks out every
+file, so git lazily fetches all 107k blobs anyway -- measured at 435MB and still
+running after 40 minutes. Skipping the checkout and sparse-setting first is what
+makes it fast.
+
+**Everything, including the data** (slow, plan for it):
+```bash
+git clone https://github.com/aloshdenny/e85.git
+```
+Or start sparse as above and pull the rest later with `git sparse-checkout disable`.
+
+**Then:**
+```bash
+conda activate tribev2          # or any Python 3.11 env
+pip install -r requirements.txt
+python scripts/verify_reproducible.py    # exit 0 = this clone will run
+```
+
+`requirements.txt` pins the full working environment, including `tribev2` itself
+from GitHub. Nothing else needs fetching by hand: the figure scripts download
+TRIBE's 709MB `best.ckpt` from the HuggingFace Hub on first use and cache it.
+
+> **Chunked artifacts**: anything over GitHub's 100MB limit is committed as
+> `{stem}_chunk_NNN{ext}` parts, so the fused file **does not exist** after a
+> clone. Always go through `scripts/chunk_utils.py` (`load_npz`, `npz_exists`,
+> `save_npz`, `load_chunked`, `save_chunked`, `ensure_fused_zip`,
+> `chunk_file_if_needed`) rather than a bare `np.load` / `torch.load` /
+> `Path.exists`, which silently find nothing. `verify_reproducible.py` enforces
+> this.
 
 ---
 
